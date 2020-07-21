@@ -18,10 +18,7 @@ class ArgsMixin(object):
                 (name, default, required) = descriptor
 
             parser.add_argument(
-                name,
-                required=required,
-                default=default,
-                action=action
+                name, required=required, default=default, action=action
             )
 
         return parser.parse_args()
@@ -32,3 +29,17 @@ class ArgsMixin(object):
         """
         options = request.args
         return int(options.get("page", "-1"))
+
+    def get_force(self):
+        """
+        Returns force parameter.
+        """
+        options = request.args
+        return options.get("force", "false") == "true"
+
+    def get_relations(self):
+        """
+        Returns force parameter.
+        """
+        options = request.args
+        return options.get("relations", "false") == "true"

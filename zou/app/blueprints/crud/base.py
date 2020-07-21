@@ -13,23 +13,23 @@ from zou.app.services.exception import ArgumentsException
 
 
 class BaseModelsResource(Resource):
-
     def __init__(self, model):
         Resource.__init__(self)
         self.model = model
 
-    def all_entries(self, query=None):
+    def all_entries(self, query=None, relations=False):
         if query is None:
             query = self.model.query
 
-        return self.model.serialize_list(query.all())
+        return self.model.serialize_list(query.all(), relations=relations)
 
-    def paginated_entries(self, query, page):
+    def paginated_entries(self, query, page, relations=False):
         total = query.count()
-        limit = current_app.config['NB_RECORDS_PER_PAGE']
+        limit = current_app.config["NB_RECORDS_PER_PAGE"]
         offset = (page - 1) * limit
 
         nb_pages = int(math.ceil(total / float(limit)))
+        query = query.order_by(self.model.updated_at.desc())
         query = query.limit(limit)
         query = query.offset(offset)
 
@@ -40,16 +40,16 @@ class BaseModelsResource(Resource):
                 "nb_pages": nb_pages,
                 "limit": limit,
                 "offset": offset,
-                "page": page
+                "page": page,
             }
         else:
             result = {
-                "data": self.all_entries(query),
+                "data": self.all_entries(query=query, relations=relations),
                 "total": total,
                 "nb_pages": nb_pages,
                 "limit": limit,
                 "offset": offset,
-                "page": page
+                "page": page,
             }
         return result
 
@@ -61,14 +61,14 @@ class BaseModelsResource(Resource):
 
         column_names = [column.name for column in self.model.__table__.columns]
         for key, value in options.items():
-            if key != "page" and key in column_names:
+            if key not in ["page", "relations"] and key in column_names:
                 field_key = getattr(self.model, key)
                 expr = field_key.property
 
                 is_many_to_many_field = isinstance(
                     expr, orm.properties.RelationshipProperty
                 )
-                value_is_list = len(value) > 0 and value[0] == '['
+                value_is_list = len(value) > 0 and value[0] == "["
 
                 if key == "name" and field_key is not None:
                     name_filter.append(value)
@@ -90,7 +90,7 @@ class BaseModelsResource(Resource):
             many_join_filter,
             in_filter,
             name_filter,
-            criterions
+            criterions,
         ) = self.build_filters(options)
 
         query = self.model.query.filter_by(**criterions)
@@ -137,19 +137,25 @@ class BaseModelsResource(Resource):
                 options = request.args
                 query = self.apply_filters(options)
                 page = int(options.get("page", "-1"))
+                relations = options.get("relations", "false") == "true"
                 is_paginated = page > -1
 
                 if is_paginated:
-                    return self.paginated_entries(query, page)
+                    return self.paginated_entries(
+                        query, page, relations=relations
+                    )
                 else:
-                    return self.all_entries(query)
+                    return self.all_entries(query, relations=relations)
         except StatementError as exception:
-            if hasattr(exception, 'message'):
-                return {
-                    "error": True,
-                    "message": "One of the value of the filter has not the "
-                            "proper format: %s" % exception.message
-                }, 400
+            if hasattr(exception, "message"):
+                return (
+                    {
+                        "error": True,
+                        "message": "One of the value of the filter has not the "
+                        "proper format: %s" % exception.message,
+                    },
+                    400,
+                )
             else:
                 raise exception
         except permissions.PermissionDenied:
@@ -166,44 +172,38 @@ class BaseModelsResource(Resource):
             data = request.json
             self.check_create_permissions(data)
             data = self.update_data(data)
-            instance = self.model(**data)
-            instance.save()
+            instance = self.model.create(**data)
             instance_dict = self.post_creation(instance)
             self.emit_create_event(instance_dict)
             return instance_dict, 201
 
         except TypeError as exception:
-            current_app.logger.error(str(exception))
+            current_app.logger.error(str(exception), exc_info=1)
             return {"message": str(exception)}, 400
 
         except IntegrityError as exception:
-            current_app.logger.error(str(exception))
+            current_app.logger.error(str(exception), exc_info=1)
             return {"message": str(exception)}, 400
 
         except StatementError as exception:
-            current_app.logger.error(str(exception))
+            current_app.logger.error(str(exception), exc_info=1)
             return {"message": str(exception)}, 400
 
         except ArgumentsException as exception:
-            current_app.logger.error(str(exception))
+            current_app.logger.error(str(exception), exc_info=1)
             return {"message": str(exception)}, 400
 
     def emit_create_event(self, instance_dict):
         return events.emit(
-            "%s:new" % self.model.__tablename__.replace('_', '-'),
-            {"%s_id" % self.model.__tablename__: instance_dict["id"]}
+            "%s:new" % self.model.__tablename__.replace("_", "-"),
+            {"%s_id" % self.model.__tablename__: instance_dict["id"]},
         )
 
 
 class BaseModelResource(Resource):
-
     def __init__(self, model):
         Resource.__init__(self)
-        self.protected_fields = [
-            "id",
-            "created_at",
-            "updated_at"
-        ]
+        self.protected_fields = ["id", "created_at", "updated_at"]
         self.model = model
 
     def get_model_or_404(self, instance_id):
@@ -226,11 +226,12 @@ class BaseModelResource(Resource):
 
     def update_data(self, data, instance_id):
         for field in self.protected_fields:
-            data.pop(field, None)
+            if (data is not None) and field in data:
+                data.pop(field, None)
         return data
 
     def serialize_instance(self, data):
-        return data.serialize()
+        return data.serialize(relations=True)
 
     def clean_get_result(self, data):
         return data
@@ -248,9 +249,16 @@ class BaseModelResource(Resource):
             result = self.clean_get_result(result)
 
         except StatementError as exception:
-            current_app.logger.error(str(exception))
+            current_app.logger.error(str(exception), exc_info=1)
             return {"message": str(exception)}, 400
+
+        except ValueError:
+            abort(404)
+
         return result, 200
+
+    def pre_update(self, instance_dict, data):
+        pass
 
     def post_update(self, instance_dict):
         pass
@@ -271,7 +279,9 @@ class BaseModelResource(Resource):
         try:
             data = self.get_arguments()
             instance = self.get_model_or_404(instance_id)
-            self.check_update_permissions(instance.serialize(), data)
+            instance_dict = instance.serialize()
+            self.check_update_permissions(instance_dict, data)
+            self.pre_update(instance_dict, data)
             data = self.update_data(data, instance_id)
             instance.update(data)
             instance_dict = instance.serialize()
@@ -280,19 +290,19 @@ class BaseModelResource(Resource):
             return instance_dict, 200
 
         except TypeError as exception:
-            current_app.logger.error(str(exception))
+            current_app.logger.error(str(exception), exc_info=1)
             return {"message": str(exception)}, 400
 
         except IntegrityError as exception:
-            current_app.logger.error(str(exception))
+            current_app.logger.error(str(exception), exc_info=1)
             return {"message": str(exception)}, 400
 
         except StatementError as exception:
-            current_app.logger.error(str(exception))
+            current_app.logger.error(str(exception), exc_info=1)
             return {"message": str(exception)}, 400
 
         except ArgumentsException as exception:
-            current_app.logger.error(str(exception))
+            current_app.logger.error(str(exception), exc_info=1)
             return {"message": str(exception)}, 400
 
     @jwt_required
@@ -312,23 +322,23 @@ class BaseModelResource(Resource):
             self.post_delete(instance_dict)
 
         except IntegrityError as exception:
-            current_app.logger.error(str(exception))
+            current_app.logger.error(str(exception), exc_info=1)
             return {"message": str(exception)}, 400
 
         except StatementError as exception:
-            current_app.logger.error(str(exception))
+            current_app.logger.error(str(exception), exc_info=1)
             return {"message": str(exception)}, 400
 
-        return '', 204
+        return "", 204
 
     def emit_update_event(self, instance_dict):
         return events.emit(
-            "%s:update" % self.model.__tablename__.replace('_', '-'),
-            {"%s_id" % self.model.__tablename__: instance_dict["id"]}
+            "%s:update" % self.model.__tablename__.replace("_", "-"),
+            {"%s_id" % self.model.__tablename__: instance_dict["id"]},
         )
 
     def emit_delete_event(self, instance_dict):
         return events.emit(
-            "%s:delete" % self.model.__tablename__.replace('_', '-'),
-            {"%s_id" % self.model.__tablename__: instance_dict["id"]}
+            "%s:delete" % self.model.__tablename__.replace("_", "-"),
+            {"%s_id" % self.model.__tablename__: instance_dict["id"]},
         )

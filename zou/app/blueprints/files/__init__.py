@@ -8,96 +8,102 @@ from .resources import (
     CommentWorkingFileResource,
     NewWorkingFileResource,
     TaskWorkingFilesResource,
-
+    EntityWorkingFilesResource,
     EntityOutputFilePathResource,
     GetNextEntityOutputFileRevisionResource,
     NewEntityOutputFileResource,
     LastEntityOutputFilesResource,
     EntityOutputTypesResource,
     EntityOutputTypeOutputFilesResource,
-
     InstanceOutputFilePathResource,
     NewInstanceOutputFileResource,
     GetNextInstanceOutputFileRevisionResource,
     LastInstanceOutputFilesResource,
     InstanceOutputTypesResource,
     InstanceOutputTypeOutputFilesResource,
-
+    EntityOutputFilesResource,
+    InstanceOutputFilesResource,
     SetTreeResource,
-
-    FileResource
+    FileResource,
+    WorkingFileFileResource,
 )
 
 routes = [
     ("/data/files/<file_id>", FileResource),
-
     ("/data/tasks/<task_id>/working-files", TaskWorkingFilesResource),
     ("/data/tasks/<task_id>/working-files/new", NewWorkingFileResource),
     (
         "/data/tasks/<task_id>/working-files/last-revisions",
-        LastWorkingFilesResource
+        LastWorkingFilesResource,
     ),
     ("/data/tasks/<task_id>/working-file-path", WorkingFilePathResource),
-
     (
         "/data/asset-instances/<asset_instance_id>"
         "/entities/<temporal_entity_id>/output-files/new",
-        NewInstanceOutputFileResource
+        NewInstanceOutputFileResource,
     ),
     (
         "/data/asset-instances/<asset_instance_id>"
         "/entities/<temporal_entity_id>/output-files/next-revision",
-        GetNextInstanceOutputFileRevisionResource
+        GetNextInstanceOutputFileRevisionResource,
     ),
     (
         "/data/asset-instances/<asset_instance_id>"
         "/entities/<temporal_entity_id>/output-files/last-revisions",
-        LastInstanceOutputFilesResource
+        LastInstanceOutputFilesResource,
     ),
     (
         "/data/asset-instances/<asset_instance_id>"
         "/entities/<temporal_entity_id>/output-types",
-        InstanceOutputTypesResource
+        InstanceOutputTypesResource,
     ),
     (
         "/data/asset-instances/<asset_instance_id>"
         "/entities/<temporal_entity_id>/output-types"
         "/<output_type_id>/output-files",
-        InstanceOutputTypeOutputFilesResource
+        InstanceOutputTypeOutputFilesResource,
     ),
     (
         "/data/asset-instances/<asset_instance_id>"
         "/entities/<temporal_entity_id>/output-file-path",
-        InstanceOutputFilePathResource
+        InstanceOutputFilePathResource,
     ),
-
+    ("/data/entities/<entity_id>/working-files", EntityWorkingFilesResource),
     (
         "/data/entities/<entity_id>/output-files/new",
-        NewEntityOutputFileResource
+        NewEntityOutputFileResource,
     ),
     (
         "/data/entities/<entity_id>/output-files/next-revision",
-        GetNextEntityOutputFileRevisionResource
+        GetNextEntityOutputFileRevisionResource,
     ),
     (
         "/data/entities/<entity_id>/output-files/last-revisions",
-        LastEntityOutputFilesResource
+        LastEntityOutputFilesResource,
     ),
-    (
-        "/data/entities/<entity_id>/output-types",
-        EntityOutputTypesResource
-    ),
+    ("/data/entities/<entity_id>/output-types", EntityOutputTypesResource),
     (
         "/data/entities/<entity_id>/output-types/<output_type_id>/output-files",
-        EntityOutputTypeOutputFilesResource
+        EntityOutputTypeOutputFilesResource,
+    ),
+    ("/data/entities/<entity_id>/output-files", EntityOutputFilesResource),
+    (
+        "/data/asset-instances/<asset_instance_id>/output-files",
+        InstanceOutputFilesResource,
     ),
     (
         "/data/entities/<entity_id>/output-file-path",
-        EntityOutputFilePathResource
+        EntityOutputFilePathResource,
     ),
-
+    (
+        "/data/working-files/<working_file_id>/file",
+        WorkingFileFileResource,
+    ),
     ("/actions/projects/<project_id>/set-file-tree", SetTreeResource),
-    ("/actions/working-files/<working_file_id>/comment", CommentWorkingFileResource),
+    (
+        "/actions/working-files/<working_file_id>/comment",
+        CommentWorkingFileResource,
+    ),
     ("/actions/working-files/<working_file_id>/modified", ModifiedFileResource)
 ]
 

@@ -7,7 +7,7 @@ import ntpath
 from mixer.backend.flask import mixer
 
 from zou.app import app
-from zou.app.utils import fields, auth
+from zou.app.utils import fields, auth, fs
 from zou.app.services import (
     breakdown_service,
     file_tree_service,
@@ -37,6 +37,8 @@ from zou.app.models.task_status import TaskStatus
 from zou.app.models.task_type import TaskType
 from zou.app.models.software import Software
 from zou.app.models.working_file import WorkingFile
+
+TEST_FOLDER = os.path.join("tests", "tmp")
 
 
 class ApiTestCase(unittest.TestCase):
@@ -77,6 +79,12 @@ class ApiTestCase(unittest.TestCase):
 
     def log_in_cg_artist(self):
         self.log_in(self.user_cg_artist["email"])
+
+    def log_in_client(self):
+        self.log_in(self.user_client["email"])
+
+    def log_in_vendor(self):
+        self.log_in(self.user_vendor["email"])
 
     def log_out(self):
         try:
@@ -313,6 +321,7 @@ class ApiDBTestCase(ApiTestCase):
             project_id=self.project.id,
             entity_type_id=self.asset_type_character.id
         )
+        return self.asset_character
 
     def generate_fixture_asset_camera(self):
         self.asset_camera = Entity.create(
@@ -501,6 +510,26 @@ class ApiDBTestCase(ApiTestCase):
         ).serialize()
         return self.user_cg_artist
 
+    def generate_fixture_user_client(self):
+        self.user_client = Person.create(
+            first_name="John",
+            last_name="Did4",
+            role="client",
+            email=u"john.did.client@gmail.com",
+            password=auth.encrypt_password("mypassword")
+        ).serialize()
+        return self.user_client
+
+    def generate_fixture_user_vendor(self):
+        self.user_vendor = Person.create(
+            first_name="John",
+            last_name="Did5",
+            role="vendor",
+            email=u"john.did.vendor@gmail.com",
+            password=auth.encrypt_password("mypassword")
+        ).serialize()
+        return self.user_vendor
+
     def generate_fixture_person(
         self,
         first_name="John",
@@ -508,13 +537,15 @@ class ApiDBTestCase(ApiTestCase):
         desktop_login="john.doe",
         email="john.doe@gmail.com"
     ):
-        self.person = Person.create(
-            first_name=first_name,
-            last_name=last_name,
-            desktop_login=desktop_login,
-            email=email,
-            password=auth.encrypt_password("mypassword")
-        )
+        self.person = Person.get_by(email=email)
+        if self.person is None:
+            self.person = Person.create(
+                first_name=first_name,
+                last_name=last_name,
+                desktop_login=desktop_login,
+                email=email,
+                password=auth.encrypt_password("mypassword")
+            )
         return self.person
 
     def generate_fixture_asset_type(self):
@@ -724,11 +755,13 @@ class ApiDBTestCase(ApiTestCase):
         self.project.save()
         return self.shot_task_standard
 
-    def generate_fixture_comment(self):
+    def generate_fixture_comment(self, person=None):
+        if person is None:
+            person = self.person.serialize()
         self.comment = tasks_service.create_comment(
             self.task.id,
             self.task_status.id,
-            self.person.id,
+            person["id"],
             "first comment"
         )
         return self.comment
@@ -837,6 +870,7 @@ class ApiDBTestCase(ApiTestCase):
             description="test description",
             source="pytest",
             task_id=self.task.id,
+            extension="mp4",
             person_id=self.person.id
         )
         return self.preview_file
@@ -861,12 +895,25 @@ class ApiDBTestCase(ApiTestCase):
         )
         return self.meta_descriptor
 
-    def generate_fixture_playlist(self, name, project_id=None):
+    def generate_fixture_playlist(
+        self,
+        name,
+        project_id=None,
+        episode_id=None,
+        for_entity="shot",
+        for_client=False,
+        is_for_all=False
+    ):
         if project_id is None:
             project_id = self.project.id
         self.playlist = Playlist.create(
             name=name,
-            project_id=project_id
+            project_id=project_id,
+            episode_id=episode_id,
+            for_entity=for_entity,
+            is_for_all=is_for_all,
+            for_client=for_client,
+            shots=[]
         )
         return self.playlist.serialize()
 
@@ -938,3 +985,14 @@ class ApiDBTestCase(ApiTestCase):
             os.path.join("csv", "%s.csv" % name)
         )
         self.upload_file(path, file_path_fixture)
+
+    def get_file_path(self, filename):
+        current_path = os.path.dirname(__file__)
+        result_file_path = os.path.join(TEST_FOLDER, filename)
+        return os.path.join(current_path, "..", result_file_path)
+
+    def create_test_folder(self):
+        os.mkdir(TEST_FOLDER)
+
+    def delete_test_folder(self):
+        fs.rm_rf(TEST_FOLDER)

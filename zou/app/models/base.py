@@ -1,6 +1,5 @@
 import datetime
 
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy_utils import UUIDType
 from zou.app import db
 from zou.app.utils import fields
@@ -9,9 +8,7 @@ from zou.app.utils import fields
 class BaseMixin(object):
 
     id = db.Column(
-        UUIDType(binary=False),
-        primary_key=True,
-        default=fields.gen_uuid
+        UUIDType(binary=False), primary_key=True, default=fields.gen_uuid
     )
 
     # Audit fields
@@ -19,7 +16,7 @@ class BaseMixin(object):
     updated_at = db.Column(
         db.DateTime,
         default=datetime.datetime.utcnow,
-        onupdate=datetime.datetime.utcnow
+        onupdate=datetime.datetime.utcnow,
     )
 
     def __repr__(self):
@@ -143,6 +140,10 @@ class BaseMixin(object):
         if instance is not None:
             instance.delete()
         return instance_id
+
+    @classmethod
+    def commit(cls):
+        db.session.commit()
 
     def save(self):
         """

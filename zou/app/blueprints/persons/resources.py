@@ -4,10 +4,7 @@ from flask import abort
 from flask_restful import Resource, reqparse
 from flask_jwt_extended import jwt_required
 
-from zou.app.services import (
-    persons_service,
-    time_spents_service
-)
+from zou.app.services import persons_service, user_service, time_spents_service
 from zou.app.utils import auth, permissions, csv_utils
 from zou.app.services.exception import WrongDateFormatException
 
@@ -29,26 +26,20 @@ class NewPersonResource(Resource):
             data["last_name"],
             data["phone"],
             role=data["role"],
-            desktop_login=data["desktop_login"]
+            desktop_login=data["desktop_login"],
         )
         return person, 201
 
     def get_arguments(self):
         parser = reqparse.RequestParser()
         parser.add_argument(
-            "email",
-            help="The email is required.",
-            required=True
+            "email", help="The email is required.", required=True
         )
         parser.add_argument(
-            "first_name",
-            help="The first name is required.",
-            required=True
+            "first_name", help="The first name is required.", required=True
         )
         parser.add_argument(
-            "last_name",
-            help="The last name is required.",
-            required=True
+            "last_name", help="The last name is required.", required=True
         )
         parser.add_argument("phone", default="")
         parser.add_argument("role", default="user")
@@ -62,11 +53,14 @@ class DesktopLoginsResource(Resource):
     Allow to create and retrieve desktop login logs. Desktop login logs can only
     be created by current user.
     """
+
     @jwt_required
     def get(self, person_id):
         current_user = persons_service.get_current_user()
-        if current_user["id"] != person_id and \
-           not permissions.has_manager_permissions():
+        if (
+            current_user["id"] != person_id
+            and not permissions.has_manager_permissions()
+        ):
             raise permissions.PermissionDenied
 
         persons_service.get_person(person_id)
@@ -77,13 +71,14 @@ class DesktopLoginsResource(Resource):
         arguments = self.get_arguments()
 
         current_user = persons_service.get_current_user()
-        if current_user["id"] != person_id and \
-           not permissions.has_admin_permissions():
+        if (
+            current_user["id"] != person_id
+            and not permissions.has_admin_permissions()
+        ):
             raise permissions.PermissionDenied
 
         desktop_login_log = persons_service.create_desktop_login_logs(
-            person_id,
-            arguments["date"]
+            person_id, arguments["date"]
         )
 
         return desktop_login_log, 201
@@ -121,6 +116,20 @@ class TimeSpentsResource(Resource):
             abort(404)
 
 
+class PersonYearTimeSpentsResource(Resource):
+    """
+    Get aggregated time spents for given person and year.
+    """
+
+    @jwt_required
+    def get(self, person_id, year):
+        user_service.check_person_access(person_id)
+        try:
+            return time_spents_service.get_year_time_spents(person_id, year)
+        except WrongDateFormatException:
+            abort(404)
+
+
 class PersonMonthTimeSpentsResource(Resource):
     """
     Get aggregated time spents for given person and month.
@@ -128,12 +137,10 @@ class PersonMonthTimeSpentsResource(Resource):
 
     @jwt_required
     def get(self, person_id, year, month):
-        permissions.check_admin_permissions()
+        user_service.check_person_access(person_id)
         try:
             return time_spents_service.get_month_time_spents(
-                person_id,
-                year,
-                month
+                person_id, year, month
             )
         except WrongDateFormatException:
             abort(404)
@@ -146,12 +153,10 @@ class PersonWeekTimeSpentsResource(Resource):
 
     @jwt_required
     def get(self, person_id, year, week):
-        permissions.check_admin_permissions()
+        user_service.check_person_access(person_id)
         try:
             return time_spents_service.get_week_time_spents(
-                person_id,
-                year,
-                week
+                person_id, year, week
             )
         except WrongDateFormatException:
             abort(404)
@@ -164,13 +169,10 @@ class PersonDayTimeSpentsResource(Resource):
 
     @jwt_required
     def get(self, person_id, year, month, day):
-        permissions.check_admin_permissions()
+        user_service.check_person_access(person_id)
         try:
             return time_spents_service.get_day_time_spents(
-                person_id,
-                year,
-                month,
-                day
+                person_id, year, month, day
             )
         except WrongDateFormatException:
             abort(404)
@@ -184,19 +186,46 @@ class TimeSpentMonthResource(Resource):
 
     @jwt_required
     def get(self, year, month):
-        permissions.check_admin_permissions()
-        return time_spents_service.get_day_table(year, month)
+        if permissions.has_admin_permissions():
+            return time_spents_service.get_day_table(year, month)
+        else:
+            current_user = persons_service.get_current_user()
+            return time_spents_service.get_day_table(
+                year, month, person_id=current_user["id"]
+            )
 
 
-class TimeSpentYearResource(Resource):
+class TimeSpentYearsResource(Resource):
+    """
+    Return a table giving time spent by user and by month for given year.
+    """
+
+    @jwt_required
+    def get(self):
+        if permissions.has_admin_permissions():
+            return time_spents_service.get_year_table()
+        else:
+            current_user = persons_service.get_current_user()
+            return time_spents_service.get_year_table(
+                person_id=current_user["id"]
+            )
+
+
+class TimeSpentMonthsResource(Resource):
     """
     Return a table giving time spent by user and by month for given year.
     """
 
     @jwt_required
     def get(self, year):
-        permissions.check_admin_permissions()
-        return time_spents_service.get_month_table(year)
+        if permissions.has_admin_permissions():
+            return time_spents_service.get_month_table(year)
+        else:
+            current_user = persons_service.get_current_user()
+            return time_spents_service.get_month_table(
+                year,
+                person_id=current_user["id"]
+            )
 
 
 class TimeSpentWeekResource(Resource):
@@ -206,19 +235,23 @@ class TimeSpentWeekResource(Resource):
 
     @jwt_required
     def get(self, year):
-        permissions.check_admin_permissions()
-        return time_spents_service.get_week_table(year)
+        if permissions.has_admin_permissions():
+            return time_spents_service.get_week_table(year)
+        else:
+            current_user = persons_service.get_current_user()
+            return time_spents_service.get_week_table(
+                year,
+                person_id=current_user["id"]
+            )
 
 
 class InvitePersonResource(Resource):
     """
     Sends an email to given person to invite him/her to connect to Kitsu
     """
+
     @jwt_required
     def get(self, person_id):
         permissions.check_admin_permissions()
         persons_service.invite_person(person_id)
-        return {
-            "success": True,
-            "message": "Email sent"
-        }
+        return {"success": True, "message": "Email sent"}

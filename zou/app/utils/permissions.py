@@ -1,8 +1,11 @@
+from functools import wraps
 from flask_principal import RoleNeed, Permission
 from werkzeug.exceptions import Forbidden
 
-admin_permission = Permission(RoleNeed('admin'))
-manager_permission = Permission(RoleNeed('manager'))
+admin_permission = Permission(RoleNeed("admin"))
+manager_permission = Permission(RoleNeed("manager"))
+client_permission = Permission(RoleNeed("client"))
+vendor_permission = Permission(RoleNeed("vendor"))
 
 
 class PermissionDenied(Forbidden):
@@ -21,6 +24,20 @@ def has_admin_permissions():
     Return True if user is admin or manager.
     """
     return admin_permission.can()
+
+
+def has_client_permissions():
+    """
+    Return True if user is client.
+    """
+    return client_permission.can()
+
+
+def has_vendor_permissions():
+    """
+    Return True if user is a vendor.
+    """
+    return vendor_permission.can()
 
 
 def check_manager_permissions():
@@ -43,3 +60,11 @@ def check_admin_permissions():
         return True
     else:
         raise PermissionDenied
+
+
+def require_admin(function):
+    @wraps(function)
+    def decorated_function(*args, **kwargs):
+        check_admin_permissions()
+        return function(*args, **kwargs)
+    return decorated_function

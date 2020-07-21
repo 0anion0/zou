@@ -1,6 +1,10 @@
 from tests.base import ApiDBTestCase
 
-from zou.app.services import tasks_service, notifications_service
+from zou.app.services import (
+    tasks_service,
+    notifications_service,
+    projects_service
+)
 
 from zou.app.models.project import Project
 from zou.app.models.person import Person
@@ -23,15 +27,18 @@ class UserContextRoutesTestCase(ApiDBTestCase):
         self.generate_fixture_department()
         self.generate_fixture_task_type()
         self.generate_fixture_task_status()
+        self.generate_fixture_task_status_wip()
+        self.generate_fixture_task_status_to_review()
         self.generate_fixture_assigner()
 
         self.project_id = self.project.id
 
-        self.task_dict = self.generate_fixture_task().serialize()
+        self.task_dict = self.generate_fixture_task().serialize(relations=True)
         self.task_id = self.task.id
         self.sequence_dict = self.sequence.serialize()
 
-        self.shot_task_dict = self.generate_fixture_shot_task().serialize()
+        self.shot_task_dict = \
+            self.generate_fixture_shot_task().serialize(relations=True)
         self.task_type_dict = self.task_type_animation.serialize()
         self.shot_task_id = self.task.id
 
@@ -337,6 +344,7 @@ class UserContextRoutesTestCase(ApiDBTestCase):
     def test_get_notifications(self):
         person_id = str(self.person.id)
         tasks_service.assign_task(self.task.id, self.user_id)
+        self.task_dict = self.task.serialize(relations=True)
         self.generate_fixture_comment()
         notifications_service.create_notifications_for_task_and_comment(
             self.task_dict,
@@ -350,6 +358,7 @@ class UserContextRoutesTestCase(ApiDBTestCase):
     def test_get_notification(self):
         tasks_service.assign_task(self.task.id, self.user_id)
         self.generate_fixture_comment()
+        self.task_dict = self.task.serialize(relations=True)
         notifications_service.create_notifications_for_task_and_comment(
             self.task_dict,
             self.comment
@@ -411,3 +420,43 @@ class UserContextRoutesTestCase(ApiDBTestCase):
             self.shot_task_dict
         )
         self.assertFalse(self.user_id in recipients)
+
+    def test_get_context(self):
+        context = self.get("/data/user/context")
+        self.assertEqual(len(context["projects"]), 1)
+        self.assertEqual(len(context["asset_types"]), 1)
+        self.assertEqual(len(context["task_types"]), 3)
+        self.assertEqual(len(context["task_status"]), 3)
+        self.assertEqual(len(context["project_status"]), 2)
+        self.assertEqual(len(context["persons"]), 3)
+        self.assertEqual(len(context["notifications"]), 0)
+        self.assertEqual(len(context["search_filters"]), 0)
+        self.assertEqual(len(context["custom_actions"]), 0)
+
+    def test_get_metadata_columns(self):
+        projects_service.add_metadata_descriptor(
+            self.project_id,
+            "asset",
+            "test client",
+            [],
+            True
+        )
+        projects_service.add_metadata_descriptor(
+            self.project_id,
+            "asset",
+            "test",
+            [],
+            False
+        )
+        self.generate_fixture_user_client()
+        self.log_in_client()
+        projects_service.add_team_member(
+            self.project_id,
+            self.user_client["id"]
+        )
+        context = self.get("/data/user/context")
+        self.assertEqual(len(context["projects"]), 1)
+        self.assertEqual(len(context["projects"][0]["descriptors"]), 1)
+        self.assertEqual(
+            context["projects"][0]["descriptors"][0]["name"], "test client"
+        )

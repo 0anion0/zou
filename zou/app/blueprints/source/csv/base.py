@@ -2,7 +2,7 @@ import uuid
 import os
 import csv
 
-from flask import request
+from flask import request, current_app
 from flask_restful import Resource
 from flask_jwt_extended import jwt_required
 
@@ -12,7 +12,6 @@ from zou.app.services import user_service, projects_service
 
 
 class BaseCsvImportResource(Resource):
-
     def __init__(self):
         Resource.__init__(self)
 
@@ -23,6 +22,7 @@ class BaseCsvImportResource(Resource):
 
         file_path = os.path.join(app.config["TMP_DIR"], file_name)
         uploaded_file.save(file_path)
+        self.is_update = request.args.get("update", "false") == "true"
 
         try:
             result = self.run_import(file_path, ",")
@@ -32,11 +32,11 @@ class BaseCsvImportResource(Resource):
                 result = self.run_import(file_path, ";")
                 return result, 201
             except KeyError as e:
-                print(e)
-                return {
-                    "error": True,
-                    "message": "A column is missing: %s" % e
-                }, 400
+                current_app.logger.error("A column is missing: %s" % e)
+                return (
+                    {"error": True, "message": "A column is missing: %s" % e},
+                    400,
+                )
 
     def run_import(self, file_path, delimiter):
         result = []
@@ -72,27 +72,27 @@ class BaseCsvImportResource(Resource):
 
 
 class BaseCsvProjectImportResource(BaseCsvImportResource):
-
     @jwt_required
     def post(self, project_id):
         uploaded_file = request.files["file"]
         file_name = "%s.csv" % uuid.uuid4()
         file_path = os.path.join(app.config["TMP_DIR"], file_name)
         uploaded_file.save(file_path)
+        self.is_update = request.args.get("update", "false") == "true"
 
         try:
             result = self.run_import(project_id, file_path, ",")
             return result, 201
         except KeyError as e:
-            print(e)
             try:
                 result = self.run_import(project_id, file_path, ";")
                 return result, 201
             except KeyError as e:
-                return {
-                    "error": True,
-                    "message": "A column is missing: %s" % e
-                }, 400
+                current_app.logger.error("A column is missing: %s" % e)
+                return (
+                    {"error": True, "message": "A column is missing: %s" % e},
+                    400,
+                )
 
     def run_import(self, project_id, file_path, delimiter):
         result = []

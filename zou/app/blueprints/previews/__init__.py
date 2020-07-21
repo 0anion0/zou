@@ -11,86 +11,79 @@ from .resources import (
     PreviewFileThumbnailSquareResource,
     PreviewFilePreviewResource,
     PreviewFileOriginalResource,
-
     CreateOrganisationThumbnailResource,
     OrganisationThumbnailResource,
     CreateProjectThumbnailResource,
     ProjectThumbnailResource,
     CreatePersonThumbnailResource,
     PersonThumbnailResource,
-
-    SetMainPreviewResource
+    LegacySetMainPreviewResource,
+    SetMainPreviewResource,
 )
 
 routes = [
-    (
-        "/pictures/preview-files/<instance_id>",
-        CreatePreviewFilePictureResource
-    ),
+    ("/pictures/preview-files/<instance_id>", CreatePreviewFilePictureResource),
     (
         "/movies/originals/preview-files/<instance_id>.mp4",
-        PreviewFileMovieResource
+        PreviewFileMovieResource,
     ),
     (
         "/movies/originals/preview-files/<instance_id>/download",
-        PreviewFileMovieDownloadResource
+        PreviewFileMovieDownloadResource,
     ),
-
     (
         "/pictures/thumbnails/preview-files/<instance_id>.png",
-        PreviewFileThumbnailResource
+        PreviewFileThumbnailResource,
     ),
     (
         "/pictures/thumbnails-square/preview-files/<instance_id>.png",
-        PreviewFileThumbnailSquareResource
+        PreviewFileThumbnailSquareResource,
     ),
     (
         "/pictures/originals/preview-files/<instance_id>.png",
-        PreviewFileOriginalResource
+        PreviewFileOriginalResource,
     ),
     (
         "/pictures/originals/preview-files/<instance_id>.<extension>",
-        PreviewFileResource
+        PreviewFileResource,
     ),
     (
         "/pictures/originals/preview-files/<instance_id>/download",
-        PreviewFileDownloadResource
+        PreviewFileDownloadResource,
     ),
-
     (
         "/pictures/previews/preview-files/<instance_id>.png",
-        PreviewFilePreviewResource
+        PreviewFilePreviewResource,
     ),
-
     (
         "/pictures/thumbnails/organisations/<instance_id>",
-        CreateOrganisationThumbnailResource
+        CreateOrganisationThumbnailResource,
     ),
     (
         "/pictures/thumbnails/organisations/<instance_id>.png",
-        OrganisationThumbnailResource
+        OrganisationThumbnailResource,
     ),
     (
         "/pictures/thumbnails/persons/<instance_id>",
-        CreatePersonThumbnailResource
+        CreatePersonThumbnailResource,
     ),
-    (
-        "/pictures/thumbnails/persons/<instance_id>.png",
-        PersonThumbnailResource
-    ),
+    ("/pictures/thumbnails/persons/<instance_id>.png", PersonThumbnailResource),
     (
         "/pictures/thumbnails/projects/<instance_id>",
-        CreateProjectThumbnailResource
+        CreateProjectThumbnailResource,
     ),
     (
         "/pictures/thumbnails/projects/<instance_id>.png",
-        ProjectThumbnailResource
+        ProjectThumbnailResource,
     ),
-
     (
         "/actions/entities/<entity_id>/set-main-preview/<preview_file_id>",
-        SetMainPreviewResource
-    )
+        LegacySetMainPreviewResource,
+    ),
+    (
+        "/actions/preview-files/<preview_file_id>/set-main-preview",
+        SetMainPreviewResource,
+    ),
 ]
 blueprint = Blueprint("thumbnails", "thumbnails")
 api = configure_api_from_blueprint(blueprint, routes)

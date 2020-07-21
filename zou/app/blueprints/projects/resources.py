@@ -8,9 +8,9 @@ from zou.app.services import (
     projects_service,
     schedule_service,
     tasks_service,
-    user_service
+    user_service,
 )
-from zou.app.utils import permissions, fields
+from zou.app.utils import permissions
 from zou.app.services.exception import WrongParameterException
 
 
@@ -25,7 +25,11 @@ class OpenProjectsResource(Resource):
         name = request.args.get("name", None)
         try:
             permissions.check_admin_permissions()
-            return projects_service.open_projects(name=name)
+            for_client = permissions.has_client_permissions()
+            return projects_service.open_projects(
+                name=name,
+                for_client=for_client
+            )
         except permissions.PermissionDenied:
             return user_service.get_open_projects(name=name)
 
@@ -62,18 +66,22 @@ class ProductionTeamResource(Resource, ArgsMixin):
     def get(self, project_id):
         user_service.check_project_access(project_id)
         project = projects_service.get_project_raw(project_id)
-        return fields.serialize_value(project.team)
+        persons = []
+        for person in project.team:
+            if permissions.has_manager_permissions:
+                persons.append(person.serialize_safe())
+            else:
+                persons.append(person.present_minimal())
+        return persons
 
     @jwt_required
     def post(self, project_id):
-        args = self.get_args([
-            ("person_id", "", True)
-        ])
+        args = self.get_args([("person_id", "", True)])
         user_service.check_manager_project_access(project_id)
-        return projects_service.add_team_member(
-            project_id,
-            args["person_id"]
-        ), 201
+        return (
+            projects_service.add_team_member(project_id, args["person_id"]),
+            201,
+        )
 
 
 class ProductionTeamRemoveResource(Resource):
@@ -85,7 +93,7 @@ class ProductionTeamRemoveResource(Resource):
     def delete(self, project_id, person_id):
         user_service.check_manager_project_access(project_id)
         projects_service.remove_team_member(project_id, person_id)
-        return '', 204
+        return "", 204
 
 
 class ProductionMetadataDescriptorsResource(Resource, ArgsMixin):
@@ -97,16 +105,22 @@ class ProductionMetadataDescriptorsResource(Resource, ArgsMixin):
     @jwt_required
     def get(self, project_id):
         user_service.check_manager_project_access(project_id)
-        return projects_service.get_metadata_descriptors(project_id)
+        for_client = permissions.has_client_permissions()
+        return projects_service.get_metadata_descriptors(project_id, for_client)
 
     @jwt_required
     def post(self, project_id):
-        args = self.get_args([
-            ("entity_type", "Asset", False),
-            ("name", "", True),
-            ("choices", [], False, "append")
-        ])
+        args = self.get_args(
+            [
+                ("entity_type", "Asset", False),
+                ("name", "", True),
+                ("for_client", "False", False),
+                ("choices", [], False, "append"),
+            ]
+        )
         permissions.check_admin_permissions()
+
+        args["for_client"] = args["for_client"] == "True"
 
         if args["entity_type"] not in ["Asset", "Shot"]:
             raise WrongParameterException(
@@ -114,16 +128,18 @@ class ProductionMetadataDescriptorsResource(Resource, ArgsMixin):
             )
 
         if len(args["name"]) == 0:
-            raise WrongParameterException(
-                "Name cannot be empty.",
-            )
+            raise WrongParameterException("Name cannot be empty.")
 
-        return projects_service.add_metadata_descriptor(
-            project_id,
-            args["entity_type"],
-            args["name"],
-            args["choices"]
-        ), 201
+        return (
+            projects_service.add_metadata_descriptor(
+                project_id,
+                args["entity_type"],
+                args["name"],
+                args["choices"],
+                args["for_client"]
+            ),
+            201,
+        )
 
 
 class ProductionMetadataDescriptorResource(Resource, ArgsMixin):
@@ -134,13 +150,14 @@ class ProductionMetadataDescriptorResource(Resource, ArgsMixin):
 
     @jwt_required
     def get(self, project_id, descriptor_id):
-        user_service.check_manager_project_access(project_id)
+        user_service.check_project_access(project_id)
         return projects_service.get_metadata_descriptor(descriptor_id)
 
     @jwt_required
     def put(self, project_id, descriptor_id):
         args = self.get_args([
             ("name", "", False),
+            ("for_client", "False", False),
             ("choices", [], False, "append")
         ])
         permissions.check_admin_permissions()
@@ -148,13 +165,15 @@ class ProductionMetadataDescriptorResource(Resource, ArgsMixin):
         if len(args["name"]) == 0:
             raise WrongParameterException("Name cannot be empty.")
 
+        args["for_client"] = args["for_client"] == "True"
+
         return projects_service.update_metadata_descriptor(descriptor_id, args)
 
     @jwt_required
     def delete(self, project_id, descriptor_id):
         permissions.check_admin_permissions()
         projects_service.remove_metadata_descriptor(descriptor_id)
-        return '', 204
+        return "", 204
 
 
 class ProductionTimeSpentsResource(Resource):
@@ -187,6 +206,7 @@ class ProductionScheduleItemsResource(Resource):
     @jwt_required
     def get(self, project_id):
         user_service.check_project_access(project_id)
+        user_service.block_access_to_vendor()
         return schedule_service.get_schedule_items(project_id)
 
 
@@ -198,6 +218,7 @@ class ProductionTaskTypeScheduleItemsResource(Resource):
     @jwt_required
     def get(self, project_id):
         user_service.check_project_access(project_id)
+        user_service.block_access_to_vendor()
         return schedule_service.get_task_types_schedule_items(project_id)
 
 
@@ -209,9 +230,9 @@ class ProductionAssetTypesScheduleItemsResource(Resource):
     @jwt_required
     def get(self, project_id, task_type_id):
         user_service.check_project_access(project_id)
+        user_service.block_access_to_vendor()
         return schedule_service.get_asset_types_schedule_items(
-            project_id,
-            task_type_id
+            project_id, task_type_id
         )
 
 
@@ -223,9 +244,9 @@ class ProductionEpisodesScheduleItemsResource(Resource):
     @jwt_required
     def get(self, project_id, task_type_id):
         user_service.check_project_access(project_id)
+        user_service.block_access_to_vendor()
         return schedule_service.get_episodes_schedule_items(
-            project_id,
-            task_type_id
+            project_id, task_type_id
         )
 
 
@@ -237,7 +258,7 @@ class ProductionSequencesScheduleItemsResource(Resource):
     @jwt_required
     def get(self, project_id, task_type_id):
         user_service.check_project_access(project_id)
+        user_service.block_access_to_vendor()
         return schedule_service.get_sequences_schedule_items(
-            project_id,
-            task_type_id
+            project_id, task_type_id
         )

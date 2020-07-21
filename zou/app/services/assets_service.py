@@ -1,6 +1,6 @@
 from sqlalchemy.exc import StatementError
 
-from zou.app.utils import events, fields
+from zou.app.utils import events, fields, cache
 from zou.app.utils import query as query_utils
 
 from zou.app.models.entity import Entity
@@ -14,14 +14,53 @@ from zou.app.services import (
     base_service,
     deletion_service,
     projects_service,
-    shots_service
+    shots_service,
+    user_service
 )
 
 from zou.app.services.exception import (
     AssetNotFoundException,
     AssetInstanceNotFoundException,
-    AssetTypeNotFoundException
+    AssetTypeNotFoundException,
 )
+
+
+def clear_asset_cache(asset_id):
+    cache.cache.delete_memoized(get_asset, asset_id)
+    cache.cache.delete_memoized(get_asset_with_relations, asset_id)
+    cache.cache.delete_memoized(get_full_asset, asset_id)
+
+
+def clear_asset_type_cache():
+    cache.cache.delete_memoized(get_asset_types)
+
+
+def get_temporal_type_ids():
+    shot_type = shots_service.get_shot_type()
+    if shot_type is None:
+        cache.cache.delete_memoized(shots_service.get_shot_type)
+        shot_type = shots_service.get_shot_type()
+
+    scene_type = shots_service.get_scene_type()
+    if scene_type is None:
+        cache.cache.delete_memoized(shots_service.get_scene_type)
+        scene_type = shots_service.get_scene_type()
+
+    sequence_type = shots_service.get_sequence_type()
+    if sequence_type is None:
+        cache.cache.delete_memoized(shots_service.get_sequence_type)
+        sequence_type = shots_service.get_sequence_type()
+
+    episode_type = shots_service.get_episode_type()
+    if episode_type is None:
+        cache.cache.delete_memoized(shots_service.get_episode_type)
+        episode_type = shots_service.get_episode_type()
+
+    ids_to_exclude = [shot_type["id"], sequence_type["id"], episode_type["id"]]
+    if scene_type is not None:
+        ids_to_exclude.append(scene_type["id"])
+
+    return ids_to_exclude
 
 
 def build_asset_type_filter():
@@ -29,17 +68,7 @@ def build_asset_type_filter():
     Generate a query filter to filter entity that are assets (it means not shot,
     not sequence, not episode and not scene)
     """
-    shot_type = shots_service.get_shot_type()
-    scene_type = shots_service.get_scene_type()
-    sequence_type = shots_service.get_sequence_type()
-    episode_type = shots_service.get_episode_type()
-    ids_to_exclude = [
-        shot_type["id"],
-        sequence_type["id"],
-        episode_type["id"]
-    ]
-    if scene_type is not None:
-        ids_to_exclude.append(scene_type["id"])
+    ids_to_exclude = get_temporal_type_ids()
     return ~Entity.entity_type_id.in_(ids_to_exclude)
 
 
@@ -48,25 +77,23 @@ def build_entity_type_asset_type_filter():
     Generate a query filter to filter entity types that are asset types (it
     means not shot, not sequence, not episode and not scene)
     """
-    shot_type = shots_service.get_shot_type()
-    scene_type = shots_service.get_scene_type()
-    sequence_type = shots_service.get_sequence_type()
-    episode_type = shots_service.get_episode_type()
-    return ~EntityType.id.in_([
-        shot_type["id"],
-        scene_type["id"],
-        sequence_type["id"],
-        episode_type["id"]
-    ])
+    ids_to_exclude = get_temporal_type_ids()
+    return ~EntityType.id.in_(ids_to_exclude)
 
 
 def get_assets(criterions={}):
     """
     Get all assets for given criterions.
     """
-    query = Entity.query \
-        .filter(build_asset_type_filter())
+    query = Entity.query.filter(build_asset_type_filter())
+    assigned_to = False
+    if "assigned_to" in criterions:
+        assigned_to = True
+        del criterions["assigned_to"]
     query = query_utils.apply_criterions_to_db_query(Entity, query, criterions)
+    if assigned_to:
+        query = query.outerjoin(Task)
+        query = query.filter(user_service.build_assignee_filter())
     result = query.all()
     return EntityType.serialize_list(result, obj_type="Asset")
 
@@ -76,13 +103,22 @@ def get_full_assets(criterions={}):
     Get all assets for given criterions with additional informations: project
     name and asset type name.
     """
-    query = Entity.query \
-        .filter_by(**criterions) \
-        .filter(build_asset_type_filter()) \
-        .join(Project, EntityType) \
-        .add_columns(Project.name, EntityType.name) \
-        .order_by(Project.name, EntityType.name, Entity.name)
+    assigned_to = False
+    if "assigned_to" in criterions:
+        assigned_to = True
+        del criterions["assigned_to"]
 
+    query = (
+        Entity.query
+        .filter_by(**criterions)
+        .filter(build_asset_type_filter())
+        .join(Project, EntityType)
+        .add_columns(Project.name, EntityType.name)
+        .order_by(Project.name, EntityType.name, Entity.name)
+    )
+    if assigned_to:
+        query = query.outerjoin(Task)
+        query = query.filter(user_service.build_assignee_filter())
     data = query.all()
     assets = []
     for (asset_model, project_name, asset_type_name) in data:
@@ -100,11 +136,11 @@ def get_assets_and_tasks(criterions={}, page=1):
     asset_map = {}
     task_map = {}
 
-    query = Entity.query \
-        .filter(build_asset_type_filter()) \
-        .join(EntityType) \
-        .outerjoin(Task) \
-        .outerjoin(assignees_table) \
+    query = (
+        Entity.query.filter(build_asset_type_filter())
+        .join(EntityType)
+        .outerjoin(Task)
+        .outerjoin(assignees_table)
         .add_columns(
             EntityType.name,
             Task.id,
@@ -116,13 +152,13 @@ def get_assets_and_tasks(criterions={}, page=1):
             Task.retake_count,
             Task.real_start_date,
             Task.end_date,
+            Task.start_date,
+            Task.due_date,
             Task.last_comment_date,
-            assignees_table.columns.person
-        ) \
-        .order_by(
-            EntityType.name,
-            Entity.name
+            assignees_table.columns.person,
         )
+        .order_by(EntityType.name, Entity.name)
+    )
 
     if "id" in criterions:
         query = query.filter(Entity.id == criterions["id"])
@@ -131,7 +167,14 @@ def get_assets_and_tasks(criterions={}, page=1):
         query = query.filter(Entity.project_id == criterions["project_id"])
 
     if "episode_id" in criterions:
-        query = query.filter(Entity.source_id == criterions["episode_id"])
+        if criterions["episode_id"] == "main":
+            query = query.filter(Entity.source_id == None)
+        elif criterions["episode_id"] != "all":
+            query = query.filter(Entity.source_id == criterions["episode_id"])
+
+    if "assigned_to" in criterions:
+        query = query.filter(user_service.build_assignee_filter())
+        del criterions["assigned_to"]
 
     for (
         asset,
@@ -144,9 +187,11 @@ def get_assets_and_tasks(criterions={}, page=1):
         task_duration,
         task_retake_count,
         task_real_start_date,
-        task_real_end_date,
+        task_end_date,
+        task_start_date,
+        task_due_date,
         task_last_comment_date,
-        person_id
+        person_id,
     ) in query.all():
 
         if asset.source_id is None:
@@ -165,7 +210,7 @@ def get_assets_and_tasks(criterions={}, page=1):
                 "canceled": asset.canceled,
                 "episode_id": source_id,
                 "data": fields.serialize_value(asset.data),
-                "tasks": []
+                "tasks": [],
             }
 
         if task_id is not None:
@@ -182,13 +227,13 @@ def get_assets_and_tasks(criterions={}, page=1):
                     "real_start_date": fields.serialize_value(
                         task_real_start_date
                     ),
-                    "real_end_date": fields.serialize_value(
-                        task_real_end_date
-                    ),
+                    "end_date": fields.serialize_value(task_end_date),
+                    "start_date": fields.serialize_value(task_start_date),
+                    "due_date": fields.serialize_value(task_due_date),
                     "last_comment_date": fields.serialize_value(
                         task_last_comment_date
                     ),
-                    "assignees": []
+                    "assignees": [],
                 }
                 task_map[task_id] = task_dict
                 asset_dict = asset_map[asset.id]
@@ -200,12 +245,12 @@ def get_assets_and_tasks(criterions={}, page=1):
     return list(asset_map.values())
 
 
+@cache.memoize_function(240)
 def get_asset_types(criterions={}):
     """
     Retrieve all asset types available.
     """
-    query = EntityType.query \
-        .filter(build_entity_type_asset_type_filter())
+    query = EntityType.query.filter(build_entity_type_asset_type_filter())
     query = query_utils.apply_criterions_to_db_query(Entity, query, criterions)
     return EntityType.serialize_list(query.all(), obj_type="AssetType")
 
@@ -219,9 +264,9 @@ def get_asset_types_for_project(project_id):
     }
 
     if len(asset_type_ids) > 0:
-        result = EntityType.query \
-            .filter(EntityType.id.in_(list(asset_type_ids))) \
-            .all()
+        result = EntityType.query.filter(
+            EntityType.id.in_(list(asset_type_ids))
+        ).all()
     else:
         result = []
     return EntityType.serialize_list(result, obj_type="AssetType")
@@ -258,11 +303,20 @@ def get_asset_raw(entity_id):
     return entity
 
 
+@cache.memoize_function(10)
 def get_asset(entity_id):
     """
     Return a given asset as a dict.
     """
     return get_asset_raw(entity_id).serialize(obj_type="Asset")
+
+
+@cache.memoize_function(30)
+def get_asset_with_relations(entity_id):
+    """
+    Return a given asset as a dict.
+    """
+    return get_asset_raw(entity_id).serialize(obj_type="Asset", relations=True)
 
 
 def get_asset_by_shotgun_id(shotgun_id):
@@ -284,6 +338,7 @@ def get_raw_asset_by_shotgun_id(shotgun_id):
     return get_asset_raw(asset["id"])
 
 
+@cache.memoize_function(3)
 def get_full_asset(asset_id):
     """
     Return asset matching given id with additional information (project name,
@@ -291,19 +346,16 @@ def get_full_asset(asset_id):
     """
     assets = get_assets_and_tasks({"id": asset_id})
     if len(assets) > 0:
-        asset = get_asset(asset_id)
-        asset_type = get_asset_type(asset["entity_type_id"])
+        asset = get_asset_with_relations(asset_id)
+        asset_type_id = asset["entity_type_id"]
+        asset_type = get_asset_type(asset_type_id)
         project = Project.get(asset["project_id"])
 
         asset["project_name"] = project.name
         asset["asset_type_id"] = asset_type["id"]
         asset["asset_type_name"] = asset_type["name"]
         del asset["source_id"]
-        del asset["shotgun_id"]
         del asset["nb_frames"]
-        del asset["parent_id"]
-        del asset["entities_in"]
-        del asset["entity_type_id"]
         asset.update(assets[0])
         return asset
     else:
@@ -315,9 +367,7 @@ def get_asset_instance_raw(asset_instance_id):
     Return given asset instance as active record.
     """
     return base_service.get_instance(
-        AssetInstance,
-        asset_instance_id,
-        AssetInstanceNotFoundException
+        AssetInstance, asset_instance_id, AssetInstanceNotFoundException
     )
 
 
@@ -343,6 +393,7 @@ def get_asset_type_raw(asset_type_id):
     return asset_type
 
 
+@cache.memoize_function(240)
 def get_asset_type(asset_type_id):
     """
     Return given asset type instance as a dict.
@@ -357,6 +408,12 @@ def get_or_create_asset_type(name):
     asset_type = EntityType.get_by(name=name)
     if asset_type is None:
         asset_type = EntityType.create(name=name)
+        clear_asset_type_cache()
+
+        events.emit(
+            "asset-type:new", {"name": asset_type.name, "id": asset_type.id}
+        )
+
     return asset_type.serialize(obj_type="AssetType")
 
 
@@ -413,49 +470,43 @@ def create_asset_types(asset_type_names):
         asset_type = get_or_create_asset_type(asset_type_name)
         asset_types.append(asset_type)
 
-        events.emit("asset-type:new", {
-            "name": asset_type_name,
-            "id": asset_type["id"]
-        })
     return asset_types
 
 
 def create_asset(
-    project_id,
-    asset_type_id,
-    name,
-    description,
-    data,
-    source_id=None
+    project_id, asset_type_id, name, description, data, source_id=None
 ):
     """
     Create a new asset from given parameters.
     """
     project = projects_service.get_project_raw(project_id)
     asset_type = get_asset_type_raw(asset_type_id)
+    if source_id is not None and len(source_id) < 36:
+        source_id = None
     asset = Entity.create(
         project_id=project_id,
         entity_type_id=asset_type_id,
         name=name,
         description=description,
-        data=data
+        data=data,
+        source_id=source_id,
     )
     asset_dict = asset.serialize(obj_type="Asset")
-    events.emit("asset:new", {
-        "asset_id": asset.id,
-        "asset_type": asset_type.id,
-        "project_id": project.id
-    })
+    events.emit(
+        "asset:new",
+        {
+            "asset_id": asset.id,
+            "asset_type": asset_type.id,
+            "project_id": project.id,
+        },
+    )
     return asset_dict
 
 
 def update_asset(asset_id, data):
     asset = get_asset_raw(asset_id)
     asset.update(data)
-    events.emit("asset:update", {
-        "asset_id": asset_id,
-        "data": data
-    })
+    events.emit("asset:update", {"asset_id": asset_id, "data": data})
     return asset.serialize(obj_type="Asset")
 
 
@@ -465,17 +516,18 @@ def remove_asset(asset_id, force=False):
 
     if is_tasks_related and not force:
         asset.update({"canceled": True})
-        events.emit("asset:update", {
-            "asset_id": asset_id
-        })
+        clear_asset_cache(str(asset_id))
+        events.emit("asset:update", {"asset_id": asset_id})
     else:
+        from zou.app.services import tasks_service
+
         tasks = Task.query.filter_by(entity_id=asset_id).all()
         for task in tasks:
             deletion_service.remove_task(task.id, force=True)
+            tasks_service.clear_task_cache(str(task.id))
         asset.delete()
-        events.emit("asset:delete", {
-            "asset_id": asset_id
-        })
+        clear_asset_cache(str(asset_id))
+        events.emit("asset:delete", {"asset_id": asset_id})
     deleted_asset = asset.serialize(obj_type="Asset")
     return deleted_asset
 
@@ -490,10 +542,10 @@ def add_asset_link(asset_in_id, asset_out_id):
     if asset_out not in asset_in.entities_out:
         asset_in.entities_out.append(asset_out)
         asset_in.save()
-        events.emit("asset:new-link", {
-            "asset_in": asset_in.id,
-            "asset_out": asset_out.id
-        })
+        events.emit(
+            "asset:new-link",
+            {"asset_in": asset_in.id, "asset_out": asset_out.id},
+        )
     return asset_in.serialize(obj_type="Asset")
 
 
@@ -505,13 +557,14 @@ def remove_asset_link(asset_in_id, asset_out_id):
     asset_out = get_asset_raw(asset_out_id)
 
     if asset_out in asset_in.entities_out:
-        asset_in.entities_out = \
-            [x for x in asset_in.entities_out if x.id != asset_out_id]
+        asset_in.entities_out = [
+            x for x in asset_in.entities_out if x.id != asset_out_id
+        ]
         asset_in.save()
-        events.emit("asset:remove-link", {
-            "asset_in": asset_in.id,
-            "asset_out": asset_out.id
-        })
+        events.emit(
+            "asset:remove-link",
+            {"asset_in": asset_in.id, "asset_out": asset_out.id},
+        )
     return asset_in.serialize(obj_type="Asset")
 
 
@@ -523,7 +576,5 @@ def cancel_asset(asset_id, force=True):
 
     asset.update({"canceled": True})
     asset_dict = asset.serialize(obj_type="Asset")
-    events.emit("asset:delete", {
-        "asset_id": asset_id
-    })
+    events.emit("asset:delete", {"asset_id": asset_id})
     return asset_dict

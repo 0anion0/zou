@@ -9,14 +9,10 @@ from zou.app.models.base import BaseMixin
 class ProjectPersonLink(db.Model):
     __tablename__ = "project_person_link"
     project_id = db.Column(
-        UUIDType(binary=False),
-        db.ForeignKey("project.id"),
-        primary_key=True
+        UUIDType(binary=False), db.ForeignKey("project.id"), primary_key=True
     )
     person_id = db.Column(
-        UUIDType(binary=False),
-        db.ForeignKey("person.id"),
-        primary_key=True
+        UUIDType(binary=False), db.ForeignKey("person.id"), primary_key=True
     )
     shotgun_id = db.Column(db.Integer)
 
@@ -25,6 +21,7 @@ class Project(db.Model, BaseMixin, SerializerMixin):
     """
     Describes a CG production the studio works on.
     """
+
     name = db.Column(db.String(80), nullable=False, unique=True, index=True)
     code = db.Column(db.String(80))
     description = db.Column(db.String(200))
@@ -41,26 +38,19 @@ class Project(db.Model, BaseMixin, SerializerMixin):
     man_days = db.Column(db.Integer)
 
     project_status_id = db.Column(
-        UUIDType(binary=False),
-        db.ForeignKey('project_status.id'),
-        index=True
+        UUIDType(binary=False), db.ForeignKey("project_status.id"), index=True
     )
 
-    team = db.relationship(
-        "Person",
-        secondary="project_person_link"
-    )
+    team = db.relationship("Person", secondary="project_person_link")
 
     def set_team(self, person_ids):
         for person_id in person_ids:
             link = ProjectPersonLink.query.filter_by(
-                project_id=self.id,
-                person_id=person_id
+                project_id=self.id, person_id=person_id
             ).first()
             if link is None:
                 link = ProjectPersonLink(
-                    project_id=self.id,
-                    person_id=person_id
+                    project_id=self.id, person_id=person_id
                 )
                 db.session.add(link)
         db.session.commit()
@@ -69,11 +59,9 @@ class Project(db.Model, BaseMixin, SerializerMixin):
     def create_from_import(cls, data):
         previous_project = cls.get(data["id"])
         person_ids = data.get("team", None)
-        del data["team"]
-        del data["type"]
-
-        if "project_status_name" in data:
-            del data["project_status_name"]
+        data.pop("team", None)
+        data.pop("type", None)
+        data.pop("project_status_name", None)
 
         if previous_project is None:
             previous_project = cls.create(**data)

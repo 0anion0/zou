@@ -22,6 +22,87 @@ class BreakdownServiceTestCase(ApiDBTestCase):
         self.asset_id = str(self.asset.id)
         self.asset_character_id = str(self.asset_character.id)
 
+    def test_get_sequence_casting(self):
+        self.shot_id = str(self.shot.id)
+        self.sequence_id = str(self.sequence.id)
+        self.asset_id = str(self.asset.id)
+        self.asset_character_id = str(self.asset_character.id)
+
+        casting = breakdown_service.get_casting(self.shot.id)
+        self.assertListEqual(casting, [])
+        new_casting = [
+            {
+                "asset_id": self.asset_id,
+                "nb_occurences": 1
+            },
+            {
+                "asset_id": self.asset_character_id,
+                "nb_occurences": 3
+            }
+        ]
+        breakdown_service.update_casting(self.shot.id, new_casting)
+        self.generate_fixture_shot("SH02")
+        new_casting = [
+            {
+                "asset_id": self.asset_id,
+                "nb_occurences": 1
+            }
+        ]
+        breakdown_service.update_casting(self.shot.id, new_casting)
+        casting = breakdown_service.get_sequence_casting(self.sequence.id)
+        self.maxDiff = 10000
+        self.assertTrue(self.shot_id in casting)
+        self.assertTrue(str(self.shot.id) in casting)
+        self.assertEqual(len(casting[self.shot_id]), 2)
+        self.assertEqual(len(casting[str(self.shot.id)]), 1)
+
+    def test_get_asset_type_casting(self):
+        self.shot_id = str(self.shot.id)
+        self.sequence_id = str(self.sequence.id)
+        self.asset_type_environment_id = str(self.asset_type_environment.id)
+        self.asset_props_id = str(self.asset.id)
+        self.asset_character_id = str(self.asset_character.id)
+        self.generate_fixture_asset(
+            "Forest", "", self.asset_type_environment_id
+        )
+        self.forest_id = str(self.asset.id)
+
+        casting = breakdown_service.get_asset_type_casting(
+            self.project_id,
+            self.asset_type_environment_id
+        )
+        self.assertDictEqual(casting, {})
+        new_casting = [
+            {
+                "asset_id": self.asset_props_id,
+                "nb_occurences": 3
+            },
+            {
+                "asset_id": self.asset_character_id,
+                "nb_occurences": 1
+            }
+        ]
+        breakdown_service.update_casting(self.asset.id, new_casting)
+        self.generate_fixture_asset(
+            "Park", "", self.asset_type_environment_id
+        )
+        new_casting = [
+            {
+                "asset_id": self.asset_props_id,
+                "nb_occurences": 1
+            }
+        ]
+        breakdown_service.update_casting(self.asset.id, new_casting)
+        casting = breakdown_service.get_asset_type_casting(
+            self.project_id,
+            self.asset_type_environment_id
+        )
+        self.maxDiff = 10000
+        self.assertTrue(self.forest_id in casting)
+        self.assertTrue(str(self.asset.id) in casting)
+        self.assertEqual(len(casting[self.forest_id]), 2)
+        self.assertEqual(len(casting[str(self.asset.id)]), 1)
+
     def new_shot_instance(self, asset_instance_id):
         return breakdown_service.add_asset_instance_to_shot(
             self.shot_id, asset_instance_id
@@ -95,7 +176,7 @@ class BreakdownServiceTestCase(ApiDBTestCase):
         self.assertEqual(instances[self.asset_id][1]["number"], 2)
         self.assertEqual(
             instances[self.asset_id][1]["name"],
-            "tree_0002"
+            "Tree_0002"
         )
         self.assertEqual(instances[self.asset_character_id][0]["number"], 1)
 
@@ -108,10 +189,10 @@ class BreakdownServiceTestCase(ApiDBTestCase):
     def test_build_asset_instance_name(self):
         name = breakdown_service.build_asset_instance_name(
             self.asset_id, 3)
-        self.assertEqual(name, "tree_0003")
+        self.assertEqual(name, "Tree_0003")
         name = breakdown_service.build_asset_instance_name(
             self.asset_character_id, 5)
-        self.assertEqual(name, "rabbit_0005")
+        self.assertEqual(name, "Rabbit_0005")
 
     def test_get_shot_asset_instances_for_asset(self):
         instances = breakdown_service.get_shot_asset_instances_for_asset(

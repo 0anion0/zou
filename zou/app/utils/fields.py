@@ -42,7 +42,7 @@ def serialize_value(value):
     elif value is None:
         return None
     elif isinstance(value, object):
-        if hasattr(value, 'serialize'):
+        if hasattr(value, "serialize"):
             return value.serialize()
         else:
             return value
@@ -74,17 +74,18 @@ def serialize_orm_arrays(array_value):
     """
     Serialize a orm array into simple data structures (useful for json dumping).
     """
-    result = []
-    for val in array_value:
-        result.append(serialize_value(val.id))
-    return result
+    return [serialize_value(val.id) for val in array_value]
 
 
-def serialize_models(models):
+def serialize_models(models, relations=False):
     """
     Serialize a list of models (useful for json dumping)
     """
-    return [model.serialize() for model in models if model is not None]
+    return [
+        model.serialize(relations=relations)
+        for model in models
+        if model is not None
+    ]
 
 
 def gen_uuid():

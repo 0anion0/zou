@@ -8,47 +8,39 @@ from .resources import (
     EntityPreviewsResource,
     EpisodePlaylistsResource,
     ProjectPlaylistsResource,
+    ProjectAllPlaylistsResource,
     ProjectBuildJobsResource,
     ProjectPlaylistResource,
     PlaylistDownloadResource,
-    PlaylistZipDownloadResource
+    PlaylistZipDownloadResource,
+    TempPlaylistResource
 )
 
 
 routes = [
     ("/data/projects/<project_id>/playlists", ProjectPlaylistsResource),
+    ("/data/projects/<project_id>/playlists/all", ProjectAllPlaylistsResource),
     (
         "/data/projects/<project_id>/episodes/<episode_id>/playlists",
-        EpisodePlaylistsResource
+        EpisodePlaylistsResource,
     ),
     (
         "/data/projects/<project_id>/playlists/<playlist_id>",
-        ProjectPlaylistResource
+        ProjectPlaylistResource,
     ),
     (
         "/data/playlists/entities/<entity_id>/preview-files",
-        EntityPreviewsResource
+        EntityPreviewsResource,
     ),
-    (
-        "/data/playlists/<playlist_id>/jobs/<build_job_id>",
-        BuildJobResource
-    ),
-    (
-        "/data/projects/<project_id>/build-jobs",
-        ProjectBuildJobsResource
-    ),
-    (
-        "/data/playlists/<playlist_id>/build/mp4",
-        BuildPlaylistMovieResource
-    ),
+    ("/data/playlists/<playlist_id>/jobs/<build_job_id>", BuildJobResource),
+    ("/data/projects/<project_id>/build-jobs", ProjectBuildJobsResource),
+    ("/data/playlists/<playlist_id>/build/mp4", BuildPlaylistMovieResource),
     (
         "/data/playlists/<playlist_id>/jobs/<build_job_id>/build/mp4",
-        PlaylistDownloadResource
+        PlaylistDownloadResource,
     ),
-    (
-        "/data/playlists/<playlist_id>/download/zip",
-        PlaylistZipDownloadResource
-    )
+    ("/data/playlists/<playlist_id>/download/zip", PlaylistZipDownloadResource),
+    ("/data/projects/<project_id>/playlists/temp", TempPlaylistResource),
 ]
 
 blueprint = Blueprint("playlists", "playlists")

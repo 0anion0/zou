@@ -10,16 +10,16 @@ from zou.app.utils import thumbnail as thumbnail_utils
 from zou.app.stores import auth_tokens_store, file_store
 from zou.app.services import (
     assets_service,
+    backup_service,
+    deletion_service,
     persons_service,
     projects_service,
     shots_service,
     sync_service,
-    tasks_service
+    tasks_service,
 )
 
-from zou.app.services.exception import (
-    PersonNotFoundException
-)
+from zou.app.services.exception import PersonNotFoundException
 
 
 def clean_auth_tokens():
@@ -76,65 +76,71 @@ def init_data():
     concept = tasks_service.get_or_create_department("Concept")
     layout = tasks_service.get_or_create_department("Layout")
 
-    tasks_service.get_or_create_task_type(
-        concept, "Concept", "#8D6E63", 1)
-    tasks_service.get_or_create_task_type(
-        modeling, "Modeling", "#78909C", 2)
-    tasks_service.get_or_create_task_type(
-        modeling, "Shading", "#64B5F6", 3)
-    tasks_service.get_or_create_task_type(
-        animation, "Rigging", "#9CCC65", 4)
+    tasks_service.get_or_create_task_type(concept, "Concept", "#8D6E63", 1)
+    tasks_service.get_or_create_task_type(modeling, "Modeling", "#78909C", 2)
+    tasks_service.get_or_create_task_type(modeling, "Shading", "#64B5F6", 3)
+    tasks_service.get_or_create_task_type(animation, "Rigging", "#9CCC65", 4)
 
     tasks_service.get_or_create_task_type(
-        concept, "Storyboard", "#43A047",
-        priority=1, for_shots=True, for_entity="Shot")
+        concept,
+        "Storyboard",
+        "#43A047",
+        priority=1,
+        for_shots=True,
+        for_entity="Shot",
+    )
     tasks_service.get_or_create_task_type(
-        layout, "Layout", "#7CB342",
-        priority=2, for_shots=True, for_entity="Shot")
+        layout,
+        "Layout",
+        "#7CB342",
+        priority=2,
+        for_shots=True,
+        for_entity="Shot",
+    )
     tasks_service.get_or_create_task_type(
-        animation, "Animation", "#009688",
-        priority=3, for_shots=True, for_entity="Shot")
+        animation,
+        "Animation",
+        "#009688",
+        priority=3,
+        for_shots=True,
+        for_entity="Shot",
+    )
     tasks_service.get_or_create_task_type(
-        compositing, "Lighting", "#F9A825",
-        priority=4, for_shots=True, for_entity="Shot")
+        compositing,
+        "Lighting",
+        "#F9A825",
+        priority=4,
+        for_shots=True,
+        for_entity="Shot",
+    )
     tasks_service.get_or_create_task_type(
-        fx, "FX", "#26C6DA",
-        priority=5, for_shots=True, for_entity="Shot")
+        fx, "FX", "#26C6DA", priority=5, for_shots=True, for_entity="Shot"
+    )
     tasks_service.get_or_create_task_type(
-        compositing, "Rendering", "#F06292",
-        priority=6, for_shots=True, for_entity="Shot")
+        compositing,
+        "Rendering",
+        "#F06292",
+        priority=6,
+        for_shots=True,
+        for_entity="Shot",
+    )
     tasks_service.get_or_create_task_type(
-        compositing, "Compositing", "#ff5252",
-        priority=7, for_shots=True, for_entity="Shot")
+        compositing,
+        "Compositing",
+        "#ff5252",
+        priority=7,
+        for_shots=True,
+        for_entity="Shot",
+    )
     print("Task types initialized.")
 
+    tasks_service.get_or_create_status("Todo", "todo", "#f5f5f5")
+    tasks_service.get_or_create_status("Work In Progress", "wip", "#3273dc")
+    tasks_service.get_or_create_status("Waiting For Approval", "wfa", "#ab26ff")
     tasks_service.get_or_create_status(
-        "Todo",
-        "todo",
-        "#f5f5f5"
+        "Retake", "retake", "#ff3860", is_retake=True
     )
-    tasks_service.get_or_create_status(
-        "Work In Progress",
-        "wip",
-        "#3273dc"
-    )
-    tasks_service.get_or_create_status(
-        "Waiting For Approval",
-        "wfa",
-        "#ab26ff"
-    )
-    tasks_service.get_or_create_status(
-        "Retake",
-        "retake",
-        "#ff3860",
-        is_retake=True
-    )
-    tasks_service.get_or_create_status(
-        "Done",
-        "done",
-        "#22d160",
-        is_done=True
-    )
+    tasks_service.get_or_create_status("Done", "done", "#22d160", is_done=True)
     print("Task status initialized.")
 
 
@@ -160,12 +166,15 @@ def sync_with_ldap_server():
 
     def search_ad_users(conn, excluded_accounts):
         attributes = [
-            "givenName", "sn", "sAMAccountName", "mail", "thumbnailPhoto"
+            "givenName",
+            "sn",
+            "sAMAccountName",
+            "mail",
+            "thumbnailPhoto",
+            "userAccountControl",
         ]
         conn.search(
-            LDAP_BASE_DN,
-            '(objectclass=person)',
-            attributes=attributes
+            LDAP_BASE_DN, "(objectCategory=person)", attributes=attributes
         )
         return [
             {
@@ -173,17 +182,17 @@ def sync_with_ldap_server():
                 "last_name": clean_value(entry.sn),
                 "email": clean_value(entry.mail),
                 "desktop_login": clean_value(entry.sAMAccountName),
-                "thumbnail": entry.thumbnailPhoto.raw_values
+                "thumbnail": entry.thumbnailPhoto.raw_values,
+                "active": clean_value(entry.userAccountControl)
+                in ["512", "66048"],
             }
             for entry in conn.entries
             if clean_value(entry.sAMAccountName) not in excluded_accounts
         ]
 
     def search_ldap_users(conn, excluded_accounts):
-        attributes = [
-            "givenName", "sn", "mail", "cn", "uid"
-        ]
-        conn.search(LDAP_BASE_DN, '(objectclass=person)', attributes=attributes)
+        attributes = ["givenName", "sn", "mail", "cn", "uid"]
+        conn.search(LDAP_BASE_DN, "(objectclass=person)", attributes=attributes)
         return [
             {
                 "first_name": clean_value(entry.givenName),
@@ -212,7 +221,7 @@ def sync_with_ldap_server():
             password=LDAP_PASSWORD,
             authentication=authentication,
             raise_exceptions=True,
-            auto_bind=True
+            auto_bind=True,
         )
 
         if LDAP_IS_AD:
@@ -226,6 +235,7 @@ def sync_with_ldap_server():
             last_name = user["last_name"]
             desktop_login = user["desktop_login"]
             email = user["email"]
+            active = user.get("active", True)
             if "thumbnail" in user and len(user["thumbnail"]) > 0:
                 thumbnail = user["thumbnail"][0]
             else:
@@ -237,36 +247,42 @@ def sync_with_ldap_server():
                     desktop_login
                 )
             except PersonNotFoundException:
-                pass
+                try:
+                    person = persons_service.get_person_by_email(email)
+                except PersonNotFoundException:
+                    pass
+
             if len(email) == 0 or email == "[]" or type(email) != str:
                 email = "%s@%s" % (desktop_login, EMAIL_DOMAIN)
 
-            if person is None:
+            if person is None and active is True:
                 person = persons_service.create_person(
                     email,
                     "default".encode("utf-8"),
                     first_name,
                     last_name,
-                    desktop_login=desktop_login
+                    desktop_login=desktop_login,
                 )
                 print("User %s created." % desktop_login)
 
-            else:
-                person = persons_service.get_person_by_desktop_login(
-                    desktop_login
+            elif person is not None:
+                persons_service.update_person(
+                    person["id"],
+                    {
+                        "email": email,
+                        "first_name": first_name,
+                        "last_name": last_name,
+                        "active": active,
+                    },
                 )
-                persons_service.update_person(person["id"], {
-                    "email": email,
-                    "first_name": first_name,
-                    "last_name": last_name
-                })
                 print("User %s updated." % desktop_login)
 
-            if len(thumbnail) > 0:
+            if person is not None and len(thumbnail) > 0:
                 save_thumbnail(person, thumbnail)
 
     def save_thumbnail(person, thumbnail):
         from zou.app import app
+
         with app.app_context():
             thumbnail_path = "/tmp/ldap_th.jpg"
             with open(thumbnail_path, "wb") as th_file:
@@ -275,45 +291,42 @@ def sync_with_ldap_server():
                 thumbnail_path
             )
             thumbnail_utils.turn_into_thumbnail(
-                thumbnail_png_path,
-                size=thumbnail_utils.BIG_SQUARE_SIZE
+                thumbnail_png_path, size=thumbnail_utils.BIG_SQUARE_SIZE
             )
             file_store.add_picture(
-                "thumbnails",
-                person["id"],
-                thumbnail_png_path
+                "thumbnails", person["id"], thumbnail_png_path
             )
             os.remove(thumbnail_png_path)
-            persons_service.update_person(person["id"], {
-                "has_avatar": True
-            })
+            persons_service.update_person(person["id"], {"has_avatar": True})
 
     ldap_users = get_ldap_users()
     update_person_list_with_ldap_users(ldap_users)
 
 
-def import_data_from_another_instance(target, login, password):
+def import_data_from_another_instance(
+    target,
+    login,
+    password,
+    project=None,
+    with_events=False
+):
     """
     Retrieve and save all the data from another API instance. It doesn't
     change the IDs.
     """
     sync_service.init(target, login, password)
-    sync_service.run_main_data_sync()
-    sync_service.run_open_project_data_sync()
-    sync_service.run_other_sync()
+    # sync_service.run_main_data_sync(project=project)
+    sync_service.run_project_data_sync(project=project)
+    # sync_service.run_other_sync(project=project)
 
 
 def run_sync_change_daemon(event_target, target, login, password, logs_dir):
     """
-    Listen to event websocket. Each time a change occurs, it retreves the
+    Listen to event websocket. Each time a change occurs, it retrieves the
     related data and save it in the current instance.
     """
     event_client = sync_service.init_events_listener(
-        target,
-        event_target,
-        login,
-        password,
-        logs_dir
+        target, event_target, login, password, logs_dir
     )
     sync_service.add_main_sync_listeners(event_client)
     sync_service.add_project_sync_listeners(event_client)
@@ -322,12 +335,92 @@ def run_sync_change_daemon(event_target, target, login, password, logs_dir):
     sync_service.run_listeners(event_client)
 
 
-def import_last_changes_from_another_instance(target, login, password):
+def run_sync_file_change_daemon(
+    event_target, target, login, password, logs_dir
+):
+    """
+    Listen to event websocket. Each time a change occurs, it retrieves the
+    related file and save it in the current instance storage.
+    """
+    event_client = sync_service.init_events_listener(
+        target, event_target, login, password, logs_dir
+    )
+    sync_service.add_file_listeners(event_client)
+    print("Start listening.")
+    sync_service.run_listeners(event_client)
+
+
+def import_last_changes_from_another_instance(
+    target, login, password, minutes=0, page_size=300
+):
+    """
+    Retrieve and save all the data related to most recent events from another
+    API instance. It doesn't change the IDs.
+    """
+    sync_service.init(target, login, password)
+    print("Last events syncing started.")
+    sync_service.run_last_events_sync(minutes=minutes, page_size=300)
+    print("Last events syncing ended.")
+
+
+def import_last_file_changes_from_another_instance(
+    target, login, password, minutes=20, page_size=50, force=False
+):
+    """
+    Retrieve and save all the data related most to recent file events
+    from another API instance (new previews and thumbnails).
+    It doesn't change the IDs.
+    """
+    sync_service.init(target, login, password)
+    print("Last files syncing started.")
+    sync_service.run_last_events_files(
+        minutes=minutes,
+        page_size=50
+    )
+    print("Last files syncing ended.")
+
+
+def import_files_from_another_instance(target, login, password, project=None):
     """
     Retrieve and save all the data related most recent events from another API
     instance. It doesn't change the IDs.
     """
     sync_service.init(target, login, password)
-    print("Syncing started.")
-    sync_service.run_last_events_sync()
-    print("Syncing ended.")
+    sync_service.download_files_from_another_instance(project=project)
+
+
+def download_file_from_storage():
+    sync_service.download_entity_thumbnails_from_storage()
+    sync_service.download_preview_files_from_storage()
+
+
+def dump_database():
+    DB_HOST = os.getenv("DB_HOST", "localhost")
+    DB_PORT = os.getenv("DB_PORT", "5432")
+    DB_USERNAME = os.getenv("DB_USERNAME", "postgres")
+    DB_PASSWORD = os.getenv("DB_PASSWORD", "mysecretpassword")
+    DB_DATABASE = os.getenv("DB_DATABASE", "zoudb")
+    filename = backup_service.generate_db_backup(
+        DB_HOST, DB_PORT, DB_USERNAME, DB_PASSWORD, DB_DATABASE
+    )
+    backup_service.store_db_backup(filename)
+
+
+def upload_files_to_cloud_storage(days):
+    backup_service.upload_entity_thumbnails_to_storage(days)
+    backup_service.upload_preview_files_to_storage(days)
+
+
+def reset_tasks_data(project_id):
+    deletion_service.reset_tasks_data(project_id)
+
+
+def remove_old_data(days_old=90):
+    print("Start removing non critical data older than %s." % days_old)
+    print("Removing old events...")
+    deletion_service.remove_old_events(days_old)
+    print("Removing old login logs...")
+    deletion_service.remove_old_login_logs(days_old)
+    print("Removing old notitfications...")
+    deletion_service.remove_old_notifications(days_old)
+    print("Old data removed.")

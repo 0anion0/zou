@@ -12,7 +12,7 @@ from zou.app.services import (
     projects_service,
     shots_service,
     time_spents_service,
-    user_service
+    user_service,
 )
 
 from zou.app.services.exception import WrongDateFormatException
@@ -60,6 +60,17 @@ class SceneTaskTypesResource(Resource):
     def get(self, scene_id):
         shots_service.get_scene(scene_id)
         return user_service.get_task_types_for_entity(scene_id)
+
+
+class SequenceTaskTypesResource(Resource):
+    """
+    Return task types related to given sequence for current user.
+    """
+
+    @jwt_required
+    def get(self, sequence_id):
+        shots_service.get_sequence(sequence_id)
+        return user_service.get_task_types_for_entity(sequence_id)
 
 
 class AssetTypeAssetsResource(Resource):
@@ -168,6 +179,17 @@ class SceneTasksResource(Resource):
         return user_service.get_tasks_for_entity(scene_id)
 
 
+class SequenceTasksResource(Resource):
+    """
+    Return tasks related to given sequence for current user.
+    """
+
+    @jwt_required
+    def get(self, sequence_id):
+        shots_service.get_sequence(sequence_id)
+        return user_service.get_tasks_for_entity(sequence_id)
+
+
 class TodosResource(Resource):
     """
     Return tasks currently assigned to current user and of which status
@@ -204,22 +226,27 @@ class FiltersResource(Resource, ArgsMixin):
     def post(self):
         arguments = self.get_arguments()
 
-        return user_service.create_filter(
-            arguments["list_type"],
-            arguments["name"],
-            arguments["query"],
-            arguments["project_id"],
-            arguments["entity_type"]
-        ), 201
+        return (
+            user_service.create_filter(
+                arguments["list_type"],
+                arguments["name"],
+                arguments["query"],
+                arguments["project_id"],
+                arguments["entity_type"],
+            ),
+            201,
+        )
 
     def get_arguments(self):
-        return self.get_args([
-            ("name", "", True),
-            ("query", "", True),
-            ("list_type", "todo", True),
-            ("project_id", None, False),
-            ("entity_type", None, False)
-        ])
+        return self.get_args(
+            [
+                ("name", "", True),
+                ("query", "", True),
+                ("list_type", "todo", True),
+                ("project_id", None, False),
+                ("entity_type", None, False),
+            ]
+        )
 
 
 class FilterResource(Resource):
@@ -230,7 +257,7 @@ class FilterResource(Resource):
     @jwt_required
     def delete(self, filter_id):
         user_service.remove_filter(filter_id)
-        return '', 204
+        return "", 204
 
 
 class DesktopLoginLogsResource(Resource):
@@ -249,8 +276,7 @@ class DesktopLoginLogsResource(Resource):
         arguments = self.get_arguments()
         current_user = persons_service.get_current_user()
         desktop_login_log = persons_service.create_desktop_login_logs(
-            current_user["id"],
-            arguments["date"]
+            current_user["id"], arguments["date"]
         )
         return desktop_login_log, 201
 
@@ -313,7 +339,7 @@ class TaskUnsubscribeResource(Resource):
     @jwt_required
     def delete(self, task_id):
         user_service.unsubscribe_from_task(task_id)
-        return '', 204
+        return "", 204
 
 
 class HasSequenceSubscribedResource(Resource):
@@ -336,8 +362,7 @@ class SequenceSubscribeResource(Resource):
     @jwt_required
     def post(self, sequence_id, task_type_id):
         subscription = user_service.subscribe_to_sequence(
-            sequence_id,
-            task_type_id
+            sequence_id, task_type_id
         )
         return subscription, 201
 
@@ -349,11 +374,8 @@ class SequenceUnsubscribeResource(Resource):
 
     @jwt_required
     def delete(self, sequence_id, task_type_id):
-        user_service.unsubscribe_from_sequence(
-            sequence_id,
-            task_type_id
-        )
-        return '', 204
+        user_service.unsubscribe_from_sequence(sequence_id, task_type_id)
+        return "", 204
 
 
 class SequenceSubscriptionsResource(Resource):
@@ -379,3 +401,14 @@ class TimeSpentsResource(Resource):
             return time_spents_service.get_time_spents(current_user["id"], date)
         except WrongDateFormatException:
             abort(404)
+
+
+class ContextResource(Resource):
+    """
+    Return context required to run properly a full app connected to
+    the API (like the Kitsu web client).
+    """
+
+    @jwt_required
+    def get(self):
+        return user_service.get_context()

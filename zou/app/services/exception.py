@@ -29,6 +29,10 @@ class AssetTypeNotFoundException(NotFound):
     pass
 
 
+class AttachmentFileNotFoundException(NotFound):
+    pass
+
+
 class TaskNotFoundException(NotFound):
     pass
 
@@ -78,6 +82,10 @@ class CommentNotFoundException(NotFound):
 
 
 class EntityNotFoundException(NotFound):
+    pass
+
+
+class EntityLinkNotFoundException(NotFound):
     pass
 
 
@@ -158,4 +166,8 @@ class WrongIdFormatException(Exception):
 
 
 class WrongParameterException(Exception):
+    pass
+
+
+class ModelWithRelationsDeletionException(Exception):
     pass

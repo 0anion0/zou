@@ -4,19 +4,30 @@ from flask_jwt_extended import jwt_required
 
 from sqlalchemy.exc import IntegrityError
 
-from zou.app.models.task import Task
 from zou.app.models.person import Person
+from zou.app.models.project import Project
+from zou.app.models.task import Task
 
 from zou.app.services import user_service, tasks_service, deletion_service
-from zou.app.utils import permissions, events
+from zou.app.utils import permissions
 
 from .base import BaseModelsResource, BaseModelResource
 
 
 class TasksResource(BaseModelsResource):
-
     def __init__(self):
         BaseModelsResource.__init__(self, Task)
+
+    def check_read_permissions(self):
+        return True
+
+    def add_project_permission_filter(self, query):
+        if permissions.has_vendor_permissions():
+            query = query.filter(user_service.build_assignee_filter())
+        elif not permissions.has_admin_permissions():
+            query = query.join(Project) \
+                .filter(user_service.build_related_projects_filter())
+        return query
 
     def post(self):
         """
@@ -30,7 +41,7 @@ class TasksResource(BaseModelsResource):
             assignees = None
 
             if is_assignees:
-                assignees = data['assignees']
+                assignees = data["assignees"]
                 persons = Person.query.filter(Person.id.in_(assignees)).all()
                 del data["assignees"]
 
@@ -39,27 +50,32 @@ class TasksResource(BaseModelsResource):
                 instance.assignees = persons
             instance.save()
 
-            return instance.serialize(), 201
+            return instance.serialize(relations=True), 201
 
         except TypeError as exception:
-            current_app.logger.error(str(exception))
+            current_app.logger.error(str(exception), exc_info=1)
             return {"message": str(exception)}, 400
 
         except IntegrityError as exception:
-            current_app.logger.error(str(exception))
+            current_app.logger.error(str(exception), exc_info=1)
             return {"message": "Task already exists."}, 400
 
-
 class TaskResource(BaseModelResource):
-
     def __init__(self):
         BaseModelResource.__init__(self, Task)
 
     def check_read_permissions(self, task):
         user_service.check_project_access(task["project_id"])
+        user_service.check_entity_access(task["entity_id"])
 
     def check_update_permissions(self, task, data):
         user_service.check_manager_project_access(task["project_id"])
+
+    def check_delete_permissions(self, task):
+        user_service.check_manager_project_access(task["project_id"])
+
+    def post_update(self, instance_dict):
+        tasks_service.clear_task_cache(instance_dict["id"])
 
     @jwt_required
     def delete(self, instance_id):
@@ -77,10 +93,11 @@ class TaskResource(BaseModelResource):
             instance_dict = instance.serialize()
             self.check_delete_permissions(instance_dict)
             deletion_service.remove_task(instance_id, force=args["force"])
+            tasks_service.clear_task_cache(instance_id)
             self.post_delete(instance_dict)
 
         except IntegrityError as exception:
-            current_app.logger.error(str(exception))
+            current_app.logger.error(str(exception), exc_info=1)
             return {"message": str(exception)}, 400
 
-        return '', 204
+        return "", 204

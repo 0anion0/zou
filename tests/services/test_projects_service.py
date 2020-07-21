@@ -1,9 +1,14 @@
 from tests.base import ApiDBTestCase
 
 from zou.app.models.entity import Entity
+from zou.app.models.project import Project
 from zou.app.models.metadata_descriptor import MetadataDescriptor
 from zou.app.models.project_status import ProjectStatus
-from zou.app.services import projects_service
+from zou.app.services import (
+    breakdown_service,
+    deletion_service,
+    projects_service
+)
 from zou.app.services.exception import ProjectNotFoundException
 
 
@@ -86,14 +91,14 @@ class ProjectServiceTestCase(ApiDBTestCase):
     def test_add_team_member(self):
         self.generate_fixture_person()
         projects_service.add_team_member(self.project.id, self.person.id)
-        project = projects_service.get_project(self.project.id)
+        project = projects_service.get_project_with_relations(self.project.id)
         self.assertEqual(project["team"], [str(self.person.id)])
 
     def test_remove_team_member(self):
         self.generate_fixture_person()
         projects_service.add_team_member(self.project.id, self.person.id)
         projects_service.remove_team_member(self.project.id, self.person.id)
-        project = projects_service.get_project(self.project.id)
+        project = projects_service.get_project_with_relations(self.project.id)
         self.assertEqual(project["team"], [])
 
     def test_add_asset_metadata_descriptor(self):
@@ -101,20 +106,28 @@ class ProjectServiceTestCase(ApiDBTestCase):
             self.project.id,
             "Asset",
             "Is Outdoor",
-            []
+            [],
+            False
         )
         self.assertIsNotNone(MetadataDescriptor.get(descriptor["id"]))
         descriptor = projects_service.add_metadata_descriptor(
             self.project.id,
             "Asset",
             "Contractor",
-            ["contractor 1", "contractor 2"]
+            ["contractor 1", "contractor 2"],
+            False
         )
         descriptors = projects_service.get_metadata_descriptors(self.project.id)
         self.assertEqual(len(descriptors), 2)
         self.assertEqual(descriptors[0]["id"], descriptor["id"])
         self.assertEqual(descriptors[0]["field_name"], "contractor")
         self.assertEqual(descriptors[1]["field_name"], "is_outdoor")
+
+        descriptors = projects_service.get_metadata_descriptors(
+            self.project.id,
+            for_client=True
+        )
+        self.assertEqual(len(descriptors), 0)
 
     def test_update_metadata_descriptor(self):
         asset = self.generate_fixture_asset_type()
@@ -123,7 +136,8 @@ class ProjectServiceTestCase(ApiDBTestCase):
             self.project.id,
             "Asset",
             "Contractor",
-            []
+            [],
+            False
         )
         asset.update({
             "data": {
@@ -133,10 +147,11 @@ class ProjectServiceTestCase(ApiDBTestCase):
         self.assertTrue("contractor" in asset.data)
         projects_service.update_metadata_descriptor(
             descriptor["id"],
-            {"name": "Team"}
+            {"name": "Team", "for_client": True}
         )
         descriptors = projects_service.get_metadata_descriptors(self.project.id)
         self.assertEqual(len(descriptors), 1)
+        self.assertTrue(descriptors[0]["for_client"])
         asset = Entity.get(asset.id)
         self.assertEqual(asset.data.get("team"), "contractor 1")
 
@@ -147,7 +162,8 @@ class ProjectServiceTestCase(ApiDBTestCase):
             self.project.id,
             "Asset",
             "Contractor",
-            []
+            [],
+            False
         )
         asset.update({
             "data": {
@@ -163,3 +179,31 @@ class ProjectServiceTestCase(ApiDBTestCase):
         self.assertEqual(len(descriptors), 0)
         asset = Entity.get(asset.id)
         self.assertFalse("contractor" in asset.data)
+
+    def test_delete_project(self):
+        self.generate_fixture_asset_type()
+        self.generate_fixture_asset_types()
+        self.generate_assigned_task()
+        self.generate_fixture_episode()
+        self.generate_fixture_sequence()
+        self.generate_fixture_shot()
+        breakdown_service.create_casting_link(
+            self.shot.id, self.asset.id
+        )
+
+        project_id = str(self.project.id)
+        deletion_service.remove_project(project_id)
+        self.assertIsNone(Project.get(project_id))
+
+    def test_is_tv_show(self):
+        self.assertFalse(projects_service.is_tv_show(self.project.serialize()))
+        self.project.update({
+            "production_type": "tvshow"
+        })
+        self.assertTrue(projects_service.is_tv_show(self.project.serialize()))
+
+    def test_is_open(self):
+        self.assertTrue(projects_service.is_open(self.project.serialize()))
+        self.assertFalse(
+            projects_service.is_open(self.project_closed.serialize())
+        )

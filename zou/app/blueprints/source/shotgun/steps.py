@@ -3,15 +3,15 @@ from flask_restful import Resource, current_app
 from zou.app.models.department import Department
 from zou.app.models.task_type import TaskType
 from zou.app.utils import colors
+from zou.app.services import tasks_service
 
 from zou.app.blueprints.source.shotgun.base import (
     BaseImportShotgunResource,
-    ImportRemoveShotgunBaseResource
+    ImportRemoveShotgunBaseResource,
 )
 
 
 class ImportShotgunStepsResource(BaseImportShotgunResource):
-
     def __init__(self):
         Resource.__init__(self)
 
@@ -20,11 +20,11 @@ class ImportShotgunStepsResource(BaseImportShotgunResource):
         department_name = self.extract_department_name(sg_step)
         return {
             "name": sg_step["code"],
-            "short_name": sg_step.get("sg_short_name", ""),
+            "short_name": sg_step.get("short_name", ""),
             "shotgun_id": sg_step["id"],
             "color": color,
             "department_name": department_name,
-            "for_entity": sg_step.get("entity_type", "Asset")
+            "for_entity": sg_step.get("entity_type", "Asset"),
         }
 
     def extract_color(self, sg_step):
@@ -45,7 +45,7 @@ class ImportShotgunStepsResource(BaseImportShotgunResource):
         if department is None:
             department_data = {
                 "name": data["department_name"],
-                "color": data["color"]
+                "color": data["color"],
             }
             department = Department(**department_data)
             department.save()
@@ -58,8 +58,7 @@ class ImportShotgunStepsResource(BaseImportShotgunResource):
         data["department_id"] = department.id
         if task_type is None:
             task_type = TaskType.get_by(
-                name=data["name"],
-                for_entity=data["for_entity"]
+                name=data["name"], for_entity=data["for_entity"]
             )
 
         if task_type is None:
@@ -70,18 +69,18 @@ class ImportShotgunStepsResource(BaseImportShotgunResource):
             existing_task_type = TaskType.get_by(
                 name=data["name"],
                 for_entity=data["for_entity"],
-                department_id=data["department_id"]
+                department_id=data["department_id"],
             )
             if existing_task_type is not None:
                 data.pop("name", None)
                 data.pop("for_entity", None)
                 data.pop("department_id", None)
             task_type.update(data)
+            tasks_service.clear_task_type_cache(str(task_type.id))
             current_app.logger.info("Task Type updated: %s" % task_type)
         return task_type
 
 
 class ImportRemoveShotgunStepResource(ImportRemoveShotgunBaseResource):
-
     def __init__(self):
         ImportRemoveShotgunBaseResource.__init__(self, TaskType)

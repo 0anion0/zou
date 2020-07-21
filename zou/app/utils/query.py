@@ -36,7 +36,7 @@ def apply_criterions_to_db_query(model, db_query, criterions):
     return db_query.filter_by(**criterions)
 
 
-def get_paginated_results(query, page):
+def get_paginated_results(query, page, relations=False):
     """
     Apply pagination to the query object.
     """
@@ -44,7 +44,7 @@ def get_paginated_results(query, page):
         entries = query.all()
         return fields.serialize_list(entries)
     else:
-        limit = app.config['NB_RECORDS_PER_PAGE']
+        limit = app.config["NB_RECORDS_PER_PAGE"]
         total = query.count()
         offset = (page - 1) * limit
 
@@ -52,22 +52,23 @@ def get_paginated_results(query, page):
         query = query.limit(limit)
         query = query.offset(offset)
 
-        if (total < offset):
+        if total < offset:
             result = {
                 "data": [],
                 "total": 0,
                 "nb_pages": nb_pages,
                 "limit": limit,
                 "offset": offset,
-                "page": page
+                "page": page,
             }
         else:
+            models = fields.serialize_models(query.all(), relations=relations)
             result = {
-                "data": fields.serialize_list(query.all()),
+                "data": models,
                 "total": total,
                 "nb_pages": nb_pages,
                 "limit": limit,
                 "offset": offset,
-                "page": page
+                "page": page,
             }
         return result

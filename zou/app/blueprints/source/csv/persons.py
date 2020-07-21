@@ -7,7 +7,6 @@ from sqlalchemy.exc import IntegrityError
 
 
 class PersonsCsvImportResource(BaseCsvImportResource):
-
     def check_permissions(self):
         return permissions.check_admin_permissions()
 
@@ -25,29 +24,33 @@ class PersonsCsvImportResource(BaseCsvImportResource):
         elif role == "Client":
             role = "client"
 
-        if role is not None and \
-           len(role) > 0 and \
-           role not in ["admin", "manager"]:
+        if (
+            role is not None
+            and len(role) > 0
+            and role not in ["admin", "manager"]
+        ):
             role = "user"
 
         try:
-            password = auth.encrypt_password("default")
             person = Person.get_by(email=email)
 
             if person is None:
+                if role is None:
+                    role = "user"
+                password = auth.encrypt_password("default")
                 person = Person.create(
                     email=email,
                     password=password,
                     first_name=first_name,
                     last_name=last_name,
                     phone=phone,
-                    role=role
+                    role=role,
                 )
-            else:
+            elif self.is_update:
                 data = {
                     "first_name": first_name,
                     "last_name": last_name,
-                    "phone": phone
+                    "phone": phone,
                 }
                 if role is not None and len(role) > 0:
                     data["role"] = role

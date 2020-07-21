@@ -6,6 +6,7 @@ from zou.app.utils import fs
 
 from PIL import Image
 
+Image.MAX_IMAGE_PIXELS = 20000 * 20000
 RECTANGLE_SIZE = 150, 100
 SQUARE_SIZE = 100, 100
 PREVIEW_SIZE = 1200, 0
@@ -21,7 +22,12 @@ def save_file(tmp_folder, instance_id, file_to_save):
     file_name = instance_id + extension.lower()
     file_path = os.path.join(tmp_folder, file_name)
     file_to_save.save(file_path)
+    im = Image.open(file_path)
+    if im.mode == "CMYK":
+        im = im.convert("RGB")
+    im.save(file_path, "PNG")
     return file_path
+
 
 def convert_jpg_to_png(file_source_path):
 
@@ -96,24 +102,18 @@ def prepare_image_for_thumbnail(im, size):
         crop_width = im_width
         crop_height = math.floor(float(im_height) / scale_factor)
         top_cut_line = (im_height - crop_height) / 2
-        im = im.crop(flat(
-            0,
-            top_cut_line,
-            crop_width,
-            top_cut_line + crop_height
-        ))
+        im = im.crop(
+            flat(0, top_cut_line, crop_width, top_cut_line + crop_height)
+        )
     else:
         # image is too wide: take some off the sides
         scale_factor = float(original_ratio) / float(target_ratio)
         crop_width = math.ceil(float(im_width) / scale_factor)
         crop_height = im_height
         side_cut_line = int(float(im_width - crop_width) / 2)
-        im = im.crop(flat(
-            side_cut_line,
-            0,
-            side_cut_line + crop_width,
-            crop_height
-        ))
+        im = im.crop(
+            flat(side_cut_line, 0, side_cut_line + crop_width, crop_height)
+        )
     return im
 
 
@@ -129,7 +129,7 @@ def generate_preview_variants(original_path, instance_id):
     variants = [
         ("thumbnails", RECTANGLE_SIZE),
         ("thumbnails-square", SQUARE_SIZE),
-        ("previews", PREVIEW_SIZE)
+        ("previews", PREVIEW_SIZE),
     ]
 
     result = []
@@ -137,8 +137,7 @@ def generate_preview_variants(original_path, instance_id):
         (picture_type, size) = picture_data
         folder_path = os.path.dirname(original_path)
         picture_path = os.path.join(
-            folder_path,
-            "%s-%s" % (picture_type, file_name)
+            folder_path, "%s-%s" % (picture_type, file_name)
         )
         shutil.copyfile(original_path, picture_path)
         turn_into_thumbnail(picture_path, size)

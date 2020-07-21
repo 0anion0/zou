@@ -7,6 +7,8 @@ from flask import Blueprint
 
 from .blueprints.assets import blueprint as assets_blueprint
 from .blueprints.auth import blueprint as auth_blueprint
+from .blueprints.breakdown import blueprint as breakdown_blueprint
+from .blueprints.comments import blueprint as comments_blueprint
 from .blueprints.crud import blueprint as crud_blueprint
 from .blueprints.events import blueprint as events_blueprint
 from .blueprints.export import blueprint as export_blueprint
@@ -42,6 +44,8 @@ def configure_api_routes(app):
     """
     app.register_blueprint(auth_blueprint)
     app.register_blueprint(assets_blueprint)
+    app.register_blueprint(breakdown_blueprint)
+    app.register_blueprint(comments_blueprint)
     app.register_blueprint(crud_blueprint)
     app.register_blueprint(export_blueprint)
     app.register_blueprint(events_blueprint)
@@ -67,11 +71,12 @@ def register_event_handlers(app):
     sys.path.insert(0, app.config["EVENT_HANDLERS_FOLDER"])
     try:
         import event_handlers
-        events.register_all(event_handlers.event_map)
+
+        events.register_all(event_handlers.event_map, app)
     except ImportError:
         # Event handlers folder is not properly configured.
         # Handlers are optional, that's why this error is ignored.
-        pass
+        app.logger.info("No event handlers folder is configured.")
     return app
 
 
@@ -94,10 +99,8 @@ def load_plugin_modules(plugin_folder):
     return [
         __import__(file_name)
         for file_name in os.listdir(plugin_folder)
-        if os.path.isdir(
-            os.path.join(plugin_folder, file_name)
-        ) and
-        file_name != "__pycache__"
+        if os.path.isdir(os.path.join(plugin_folder, file_name))
+        and file_name != "__pycache__"
     ]
 
 
@@ -110,13 +113,12 @@ def load_plugin(app, plugin):
     routes = [
         ("/plugins%s" % route_path, resource)
         for (route_path, resource) in plugin.routes
-        if len(route_path) > 0 and route_path[0] == '/'
+        if len(route_path) > 0 and route_path[0] == "/"
     ]
     plugin.routes = routes
     plugin.blueprint = Blueprint(plugin.name, plugin.name)
     plugin.api = api_utils.configure_api_from_blueprint(
-        plugin.blueprint,
-        plugin.routes
+        plugin.blueprint, plugin.routes
     )
     app.register_blueprint(plugin.blueprint)
     app.logger.info("Plugin %s loaded." % plugin.name)

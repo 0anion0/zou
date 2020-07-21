@@ -1,5 +1,7 @@
 from tests.base import ApiDBTestCase
 
+from zou.app.services import projects_service, tasks_service
+
 
 class SequenceTestCase(ApiDBTestCase):
 
@@ -16,8 +18,9 @@ class SequenceTestCase(ApiDBTestCase):
 
         self.generate_fixture_episode()
         self.generate_fixture_sequence()
+        self.generate_fixture_shot()
         self.serialized_sequence = self.sequence.serialize(obj_type="Sequence")
-        self.sequence_id = str(self.serialized_sequence["id"])
+        self.sequence_id = self.serialized_sequence["id"]
         sequence_02 = self.generate_fixture_sequence("SE02")
         self.sequence_02_id = str(sequence_02.id)
         self.generate_fixture_sequence("SE03")
@@ -68,6 +71,21 @@ class SequenceTestCase(ApiDBTestCase):
             self.serialized_sequence
         )
 
+    def test_get_sequences_for_project_with_vendor(self):
+        self.generate_fixture_shot_task(name="Secondary")
+        self.generate_fixture_user_vendor()
+        task_id = self.shot_task.id
+        project_id = self.project_id
+        person_id = self.user_vendor["id"]
+        projects_service.clear_project_cache(str(project_id))
+        self.log_in_vendor()
+        projects_service.add_team_member(project_id, person_id)
+        episodes = self.get("data/projects/%s/sequences" % project_id)
+        self.assertEqual(len(episodes), 0)
+        tasks_service.assign_task(task_id, person_id)
+        episodes = self.get("data/projects/%s/sequences" % project_id)
+        self.assertEqual(len(episodes), 1)
+
     def test_get_sequences_for_project_404(self):
         self.get("data/projects/unknown/sequences", 404)
 
@@ -90,3 +108,9 @@ class SequenceTestCase(ApiDBTestCase):
         sequences = self.get(
             "data/sequences?project_id=%s&name=SE01" % self.project_id, 403
         )
+
+    def test_delete_sequence(self):
+        self.get("data/sequences/%s" % self.sequence_id)
+        self.delete("data/sequences/%s" % self.sequence_id, 400)
+        self.delete("data/sequences/%s?force=true" % self.sequence_id)
+        self.get("data/sequences/%s" % self.sequence_id, 404)
