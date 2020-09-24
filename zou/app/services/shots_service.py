@@ -351,7 +351,7 @@ def get_shot_raw(shot_id):
     return shot
 
 
-@cache.memoize_function(30)
+@cache.memoize_function(120)
 def get_shot(shot_id):
     """
     Return given shot as a dictionary.
@@ -359,7 +359,7 @@ def get_shot(shot_id):
     return get_shot_raw(shot_id).serialize(obj_type="Shot")
 
 
-@cache.memoize_function(30)
+@cache.memoize_function(120)
 def get_shot_with_relations(shot_id):
     """
     Return given shot as a dictionary.
@@ -367,7 +367,7 @@ def get_shot_with_relations(shot_id):
     return get_shot_raw(shot_id).serialize(obj_type="Shot", relations=True)
 
 
-@cache.memoize_function(3)
+@cache.memoize_function(120)
 def get_full_shot(shot_id):
     """
     Return given shot as a dictionary with extra data like project and
@@ -668,6 +668,7 @@ def get_episodes_for_project(project_id, only_assigned=False):
     if only_assigned:
         Sequence = aliased(Entity, name="sequence")
         Shot = aliased(Entity, name="shot")
+        Asset = aliased(Entity, name="asset")
         query = (
             Entity.query
             .join(Sequence, Entity.id == Sequence.parent_id)
@@ -676,7 +677,21 @@ def get_episodes_for_project(project_id, only_assigned=False):
             .filter(Entity.project_id == project_id)
             .filter(user_service.build_assignee_filter())
         )
-        return fields.serialize_models(query.all())
+        shot_episodes = fields.serialize_models(query.all())
+        shot_episode_ids = {episode["id"]: True for episode in shot_episodes}
+        query = (
+            Entity.query
+            .join(Asset, Entity.id == Asset.source_id)
+            .join(Task, Asset.id == Task.entity_id)
+            .filter(Entity.project_id == project_id)
+            .filter(user_service.build_assignee_filter())
+        )
+        asset_episodes = fields.serialize_models(query.all())
+        result = shot_episodes
+        for episode in asset_episodes:
+            if episode["id"] not in shot_episode_ids:
+                result.append(episode)
+        return result
     else:
         return entities_service.get_entities_for_project(
             project_id, get_episode_type()["id"], "Episode"
